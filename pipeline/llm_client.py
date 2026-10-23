@@ -52,7 +52,7 @@ def _safe_provider_error(exc: Exception) -> LLMError:
     if "timeout" in name or "deadline" in name or status_code in (408, 504):
         return LLMError("API_TIMEOUT", "Gemini did not respond before the configured timeout.")
     if "rate" in name or "resourceexhausted" in name or "quota" in name or status_code == 429:
-        return LLMError("RATE_LIMIT", "Gemini rate or quota limit was reached. Try again later.")
+        return LLMError("RATE_LIMIT", "Gemini rate or quota limit was reached. Wait about a minute before trying again.")
     if "unauth" in name or "permission" in name or status_code in (401, 403):
         return LLMError("API_AUTH_ERROR", "Gemini rejected the request. Check the API key and project access.")
     if status_code in (500, 502, 503):

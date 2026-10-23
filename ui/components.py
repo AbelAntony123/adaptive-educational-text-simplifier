@@ -68,6 +68,7 @@ def render_verification(entry: dict) -> None:
     if status == "PASS":
         st.success(
             "**Verification: PASS.** Every check that ran reported a pass. "
+            "This checks that the text stays faithful to the original, not how simple it is. "
             "Automated checks can still miss problems, so please read the text yourself."
         )
     elif status == "FAIL":
@@ -120,9 +121,12 @@ def render_metrics(entry: dict) -> None:
             )
         else:
             st.markdown(
-                "- **Readability score:** the formula, scale and direction are defined by the backend. "
-                "Confirm them with the backend team before comparing scores.\n"
-                "- **Semantic similarity:** the scale is defined by the backend; this app does not rescale it."
+                "- **Readability score:** Flesch Reading Ease of the simplified text, as described in the "
+                "backend documentation. Higher means easier: roughly 60 is plain English and 30 or below is "
+                "very difficult. Long technical words keep the score low even in a simple sentence, so compare "
+                "it with the original text's score before drawing conclusions.\n"
+                "- **Semantic similarity:** 0 to 1, calculated as (cosine similarity + 1) / 2, so values tend "
+                "to look high. A score near 1 can also mean the text barely changed."
             )
         st.markdown(
             "- Semantic similarity shows how close the meaning of two texts is. "

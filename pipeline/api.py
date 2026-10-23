@@ -18,7 +18,9 @@ RETRY_PAUSES = (1.0, 2.0, 2.0, 2.0)
 # Temporary errors get their own small retry budget, so a busy provider does not
 # use up the attempts reserved for fixing verification failures.
 MAX_TRANSIENT_RETRIES = 2
-TRANSIENT_CODES = {"API_TIMEOUT", "RATE_LIMIT", "API_ERROR"}
+# RATE_LIMIT is deliberately not retried: a per-minute quota needs a much longer wait
+# than the short pauses here, and quick retries only use up more of the quota.
+TRANSIENT_CODES = {"API_TIMEOUT", "API_ERROR"}
 _sleep = time.sleep
 
 

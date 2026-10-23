@@ -45,8 +45,10 @@ Provider SDK retries are disabled so one pipeline attempt maps to one provider
 request. Verification and embedding requests do not count. The default maximum
 is three generation requests that return a response, configurable with
 `SIMPLIFIER_MAX_ATTEMPTS` (1–5). A failed verification prompts another
-generation with feedback. A transient generation error (timeout, rate limit,
-HTTP 5xx) is retried at most twice, with a short pause, and these retries do not
+generation with feedback. A transient generation error (timeout or HTTP 5xx)
+is retried at most twice, with a short pause. A rate-limit or quota error is
+not retried, because quick retries use up more quota; the user is told to wait
+about a minute. Transient retries do not
 use up the three response attempts, but they are counted in `attempts` because
 each one is a started request. `attempts` can therefore exceed the maximum.
 

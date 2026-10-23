@@ -263,15 +263,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(result["attempts"], 1)
         self.sleep.assert_not_called()
 
-    def test_rate_limit_and_generic_exception_have_safe_errors(self):
-        for exception, code in [
-            (LLMError("RATE_LIMIT", "Rate limited."), "RATE_LIMIT"),
-            (LLMError("API_ERROR", "Unavailable."), "API_ERROR"),
-        ]:
-            with self.subTest(code=code), patch.object(api, "generate_text", side_effect=exception):
-                result = api.simplify_text(TEXT, "Beginner")
-                self.assertEqual(result["errors"][0]["code"], code)
-                self.assertEqual(result["attempts"], 3)
+    def test_generic_api_error_has_safe_error_and_is_retried(self):
+        with patch.object(api, "generate_text", side_effect=LLMError("API_ERROR", "Unavailable.")):
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(result["errors"][0]["code"], "API_ERROR")
+        self.assertEqual(result["attempts"], 3)
+
+    def test_rate_limit_is_not_retried_quickly(self):
+        with patch.object(api, "generate_text", side_effect=LLMError("RATE_LIMIT", "Rate limited.")) as generate:
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(result["errors"][0]["code"], "RATE_LIMIT")
+        self.assertEqual(result["attempts"], 1)
+        self.assertEqual(generate.call_count, 1)
+        self.sleep.assert_not_called()
 
     def test_malformed_generation_output_retries(self):
         with patch.object(api, "generate_text", return_value="") as generate:
