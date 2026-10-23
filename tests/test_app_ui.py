@@ -68,6 +68,23 @@ def test_simplify_in_each_level_shows_mock_banner_and_result(level):
     assert at.session_state["current_entry"]["source"] == "mock"
 
 
+def test_result_shows_text_status_badges():
+    at = run_simplify(new_app())
+    badges = "\n".join(m.value for m in at.markdown if "badge" in m.value)
+    assert "MOCK DATA" in badges
+    assert "Level: Beginner" in badges
+    assert "Verification: PASS" in badges
+
+
+def test_not_run_badge_is_never_labelled_pass():
+    at = new_app()
+    at.selectbox(key="scenario").select("Verification not run")
+    at = run_simplify(at)
+    badges = "\n".join(m.value for m in at.markdown if "badge" in m.value)
+    assert "Verification: NOT RUN" in badges
+    assert "Verification: PASS" not in badges
+
+
 def test_result_shows_metrics_and_attempts():
     at = run_simplify(new_app())
     labels = {m.label: m.value for m in at.metric}

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pandas as pd
 import streamlit as st
 
 from services.backend_adapter import SOURCE_BACKEND, SOURCE_MOCK
+from ui.diff import word_diff_html
 from ui.exports import export_filename, history_to_json, to_json, to_txt
+from ui.theme import badge, badge_row, status_badge, text_box
 
 LEVEL_HELP = {
     "Beginner": "Simplest wording, for readers new to the topic.",
@@ -30,6 +33,37 @@ def render_source_banner(source: str) -> None:
         st.info("**Source: real backend.** This result came from the connected simplification backend.")
 
 
+def render_summary_badges(entry: dict) -> None:
+    source = (
+        badge("MOCK DATA", "warn") if entry["source"] == SOURCE_MOCK else badge("REAL BACKEND", "info")
+    )
+    attempts = "N/A" if entry["attempts"] is None else str(entry["attempts"])
+    badge_row(
+        [
+            source,
+            badge(f"Level: {entry['level']}", "neutral"),
+            status_badge(entry["verification_status"]),
+            badge(f"Attempts: {attempts}", "neutral"),
+        ]
+    )
+
+
+def render_changes(entry: dict) -> None:
+    """Optional word-level view of what the rewrite changed."""
+    if not entry["simplified_text"].strip():
+        return
+    with st.expander("Show what changed, word by word"):
+        st.caption(
+            "Struck-through words were removed from the original. Underlined words were added in the simplified text."
+        )
+        left_html, right_html = word_diff_html(entry["original_text"], entry["simplified_text"])
+        left, right = st.columns(2)
+        left.markdown("**Original**")
+        left.markdown(f'<div class="diff-box">{left_html}</div>', unsafe_allow_html=True)
+        right.markdown("**Simplified**")
+        right.markdown(f'<div class="diff-box">{right_html}</div>', unsafe_allow_html=True)
+
+
 def render_errors(entry: dict) -> None:
     for error in entry["errors"]:
         st.error(f"**{error['code']}**: {error['message']}")
@@ -39,25 +73,11 @@ def render_comparison(entry: dict) -> None:
     left, right = st.columns(2)
     with left:
         st.markdown("##### Original text")
-        st.text_area(
-            "Original text",
-            value=entry["original_text"],
-            height=300,
-            disabled=True,
-            label_visibility="collapsed",
-            key=f"orig_{entry['id']}_{entry.get('_view', '')}",
-        )
+        text_box(entry["original_text"])
     with right:
         st.markdown(f"##### Simplified text ({entry['level']})")
         if entry["simplified_text"].strip():
-            st.text_area(
-                "Simplified text",
-                value=entry["simplified_text"],
-                height=300,
-                disabled=True,
-                label_visibility="collapsed",
-                key=f"simp_{entry['id']}_{entry.get('_view', '')}",
-            )
+            text_box(entry["simplified_text"])
         else:
             st.info("No simplified text was produced for this run.")
 
@@ -94,12 +114,13 @@ def render_verification(entry: dict) -> None:
 def render_metrics(entry: dict) -> None:
     metrics = entry["metrics"]
     st.markdown("### Metrics")
-    cols = st.columns(5)
-    cols[0].metric("Readability score", _na(metrics["readability_score"], "{:.1f}"))
-    cols[1].metric("Semantic similarity", _na(metrics["semantic_similarity"], "{:.2f}"))
-    cols[2].metric("Words (original)", _na(metrics["word_count_original"], "{:,}"))
-    cols[3].metric("Words (simplified)", _na(metrics["word_count_simplified"], "{:,}"))
-    cols[4].metric("Attempts", _na(entry["attempts"]))
+    top = st.columns(3)
+    top[0].metric("Readability score", _na(metrics["readability_score"], "{:.1f}"))
+    top[1].metric("Semantic similarity", _na(metrics["semantic_similarity"], "{:.2f}"))
+    top[2].metric("Attempts", _na(entry["attempts"]))
+    bottom = st.columns(3)
+    bottom[0].metric("Words (original)", _na(metrics["word_count_original"], "{:,}"))
+    bottom[1].metric("Words (simplified)", _na(metrics["word_count_simplified"], "{:,}"))
 
     original, simplified = metrics["word_count_original"], metrics["word_count_simplified"]
     if original and simplified is not None:
@@ -138,7 +159,7 @@ def render_metrics(entry: dict) -> None:
 
 def render_downloads(entry: dict, key_prefix: str) -> None:
     st.markdown("### Download")
-    left, right, _ = st.columns([1, 1, 2])
+    left, right, _ = st.columns([1.2, 1.2, 1])
     with left:
         st.download_button(
             "Download as TXT",
@@ -161,12 +182,14 @@ def render_result(entry: dict, view: str = "current") -> None:
     """Show one complete result. ``view`` keeps widget keys unique across tabs."""
     entry = {**entry, "_view": view}
     render_source_banner(entry["source"])
+    render_summary_badges(entry)
     render_errors(entry)
     if entry["warnings"]:
         with st.expander(f"Notes about this response ({len(entry['warnings'])})"):
             for warning in entry["warnings"]:
                 st.markdown(f"- {warning}")
     render_comparison(entry)
+    render_changes(entry)
     render_verification(entry)
     render_metrics(entry)
     render_downloads(entry, view)
@@ -179,6 +202,23 @@ def entry_label(entry: dict) -> str:
         when = "?"
     source = "MOCK" if entry["source"] == SOURCE_MOCK else "BACKEND"
     return f"#{entry['id']} | {when} | {entry['level']} | {source} | {entry['verification_status']}"
+
+
+def render_readability_chart(entries: list[dict]) -> None:
+    """Bar chart of the readability score of each run that has one (oldest on the left)."""
+    rows = [
+        {"Run": f"#{e['id']} {e['level']} ({'mock' if e['source'] == SOURCE_MOCK else 'backend'})",
+         "Readability score": e["metrics"]["readability_score"]}
+        for e in reversed(entries)
+        if e["metrics"]["readability_score"] is not None
+    ]
+    if len(rows) < 2:
+        return
+    st.markdown("#### Readability by run")
+    st.bar_chart(pd.DataFrame(rows).set_index("Run"), y="Readability score")
+    st.caption(
+        "Flesch Reading Ease: higher means easier to read. Runs marked mock use invented example numbers."
+    )
 
 
 def render_history(entries: list[dict], on_clear) -> None:
@@ -200,6 +240,7 @@ def render_history(entries: list[dict], on_clear) -> None:
             for e in entries
         ]
     )
+    render_readability_chart(entries)
     by_label = {entry_label(e): e for e in entries}
     chosen = st.selectbox("Open a previous result", list(by_label), key="history_select")
     left, right, _ = st.columns([1, 1, 2])

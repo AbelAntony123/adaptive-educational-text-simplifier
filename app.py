@@ -19,6 +19,7 @@ from services.file_parser import SUPPORTED_EXTENSIONS, FileParseError, parse_upl
 from services.mock_data import MOCK_SCENARIOS, SAMPLE_TEXT
 from ui.components import LEVEL_HELP, render_history, render_result
 from ui.history import add_entry, clear_history, get_entries, init_history
+from ui.theme import apply_theme
 
 MODE_MOCK = "Demo with mock data"
 MODE_BACKEND = "Real backend"
@@ -111,6 +112,7 @@ def main() -> None:
     mode, scenario = render_sidebar()
 
     st.title("Adaptive Educational Text Simplifier")
+    apply_theme()
     st.write(
         "Rewrite educational text at the Beginner, Intermediate or Advanced level, "
         "then compare it with the original, see how it was checked, and download the result."
