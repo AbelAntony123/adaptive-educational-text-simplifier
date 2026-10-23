@@ -1,0 +1,2 @@
+# Backend-only dependency; keep the UI's shared requirements.txt untouched.
+google-genai>=1.30,<3
