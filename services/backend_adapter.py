@@ -35,7 +35,7 @@ SOURCE_DESCRIPTIONS = {
 }
 
 MAX_INPUT_CHARS = 20_000  # UI-side safety limit, not a confirmed backend limit
-BACKEND_TIMEOUT_SECONDS = 120
+BACKEND_TIMEOUT_SECONDS = 180  # backend worst case is about 150 s (see docs/BACKEND_CONTRACT.md)
 BACKEND_MODULE_ENV = "SIMPLIFIER_BACKEND_MODULE"
 BACKEND_FUNCTION_NAME = "simplify_text"
 

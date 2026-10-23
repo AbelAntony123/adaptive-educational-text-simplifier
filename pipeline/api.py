@@ -15,6 +15,10 @@ STATUSES = ("PASS", "FAIL", "NOT RUN")
 
 # Seconds to wait before retrying a temporary provider error (for example HTTP 503).
 RETRY_PAUSES = (1.0, 2.0, 2.0, 2.0)
+# Temporary errors get their own small retry budget, so a busy provider does not
+# use up the attempts reserved for fixing verification failures.
+MAX_TRANSIENT_RETRIES = 2
+TRANSIENT_CODES = {"API_TIMEOUT", "RATE_LIMIT", "API_ERROR"}
 _sleep = time.sleep
 
 
@@ -68,21 +72,25 @@ def simplify_text(original_text: str, level: str) -> dict:
 
     best_text = ""
     best_details: list[dict] = []
-    attempts = 0
+    attempts = 0  # every generation request started; this is what the UI shows
+    generated = 0  # requests that returned a response; limited by max_attempts
+    transient_retries = 0
     errors: list[dict] = []
     retry_feedback = ""
 
-    while attempts < settings.max_attempts:
+    while generated < settings.max_attempts:
         attempts += 1
         try:
             candidate = generate_text(text, level_value, retry_feedback).strip()
         except LLMError as exc:
             errors.append(_error(exc.code, exc.public_message))
             # Retrying transient provider errors can recover from a brief interruption.
-            if exc.code in {"API_TIMEOUT", "RATE_LIMIT", "API_ERROR"} and attempts < settings.max_attempts:
-                _sleep(RETRY_PAUSES[min(attempts - 1, len(RETRY_PAUSES) - 1)])
+            if exc.code in TRANSIENT_CODES and transient_retries < MAX_TRANSIENT_RETRIES:
+                _sleep(RETRY_PAUSES[min(transient_retries, len(RETRY_PAUSES) - 1)])
+                transient_retries += 1
                 continue
             break
+        generated += 1
         if not candidate or candidate == text.strip():
             retry_feedback = "The previous output was empty or unchanged. Produce a genuine rewrite while preserving meaning."
             errors.append(_error("MODEL_OUTPUT_INVALID", "Gemini returned empty or unchanged text."))

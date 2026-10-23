@@ -45,6 +45,14 @@ class PromptTests(unittest.TestCase):
         prompts = {simplification_prompt(TEXT, level) for level in LEVEL_INSTRUCTIONS}
         self.assertEqual(len(prompts), 3)
 
+    def test_no_prompt_asks_the_model_to_add_explanations(self):
+        # The factuality review fails added facts, so asking for explanations would
+        # make Beginner results fail by design.
+        for level, instruction in LEVEL_INSTRUCTIONS.items():
+            with self.subTest(level=level):
+                self.assertNotIn("explain", instruction.lower())
+                self.assertIn("do not add", simplification_prompt(TEXT, level).lower())
+
 
 class MetricTests(unittest.TestCase):
     def test_known_readability_and_word_count(self):
@@ -236,6 +244,17 @@ class ApiTests(unittest.TestCase):
         with patch.object(api, "generate_text", side_effect=LLMError("API_ERROR", "Unavailable.")):
             api.simplify_text(TEXT, "Beginner")
         self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1.0, 2.0])
+
+    def test_temporary_errors_do_not_use_up_the_verification_retries(self):
+        busy = LLMError("API_ERROR", "Unavailable.")
+        failed = [{"check": "facts", "status": "FAIL", "explanation": "Added claim."}]
+        with patch.object(api, "generate_text", side_effect=[busy, busy, "first rewrite", SIMPLIFIED, SIMPLIFIED]) as generate, patch.object(
+            api, "verify", side_effect=[failed, passing_checks(TEXT, SIMPLIFIED)]
+        ), patch.object(api, "semantic_similarity", return_value=0.8):
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(result["verification_status"], "PASS")
+        self.assertEqual(generate.call_count, 4)
+        self.assertEqual(result["attempts"], 4)  # every started request is counted
 
     def test_non_transient_errors_do_not_pause_or_retry(self):
         with patch.object(api, "generate_text", side_effect=LLMError("API_AUTH_ERROR", "Rejected.")) as generate:

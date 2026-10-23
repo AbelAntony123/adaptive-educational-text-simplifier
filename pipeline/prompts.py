@@ -1,14 +1,19 @@
 """Versioned prompts for learner-level adaptation and factuality review."""
 
-PROMPT_VERSION = "2026-10-23.1"
+PROMPT_VERSION = "2026-10-23.2"
 
+# The factuality review rejects any added fact, so no level asks the model to add
+# definitions or explanations; simplification works by shorter sentences and plainer words.
 LEVEL_INSTRUCTIONS = {
     "Beginner": (
-        "Use short sentences, common everyday words, and explain unavoidable technical terms briefly. "
-        "Keep every key fact, number, name, relationship, and necessary technical term. Keep detail, but explain it plainly."
+        "Use short sentences and common everyday words. Split long sentences into several short ones and replace "
+        "hard words with simpler words where the meaning stays the same. Keep every key fact, number, name, "
+        "relationship, and necessary technical term exactly as the source states it, and keep the text about as "
+        "long as the source."
     ),
     "Intermediate": (
-        "Use clear sentences of moderate length and familiar academic vocabulary. Briefly explain less common terms. "
+        "Use clear sentences of moderate length and familiar academic vocabulary. Replace rare words with more "
+        "familiar ones where the meaning stays the same. "
         "Keep all key facts, numbers, names, relationships, necessary technical terms, and supporting detail."
     ),
     "Advanced": (
@@ -22,7 +27,8 @@ def simplification_prompt(original_text: str, level: str, feedback: str = "") ->
     instruction = LEVEL_INSTRUCTIONS[level]
     retry = f"\nCorrect these issues from the previous attempt: {feedback}" if feedback else ""
     return (
-        "Rewrite the source for the requested learner level. Do not add facts or remove important qualifications. "
+        "Rewrite the source for the requested learner level. Do not add facts, definitions, examples, analogies, or "
+        "background that the source does not state, and do not remove important qualifications. "
         "Return only the rewritten text, with no heading or commentary.\n\n"
         f"Learner level: {level}\nInstructions: {instruction}{retry}\n\n"
         f"Source text:\n{original_text}"

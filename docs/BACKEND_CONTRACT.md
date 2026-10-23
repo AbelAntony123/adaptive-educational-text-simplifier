@@ -10,17 +10,20 @@ The function returns the agreed result keys: `original_text`,
 exceptions or credentials.
 
 `level` must exactly match `Beginner`, `Intermediate`, or `Advanced`. Beginner
-uses short sentences and common vocabulary with brief explanations. Intermediate
-uses moderate sentence length and familiar academic words. Advanced uses
-concise academic wording while retaining technical terms. Every level is
-instructed to retain facts, names, numbers, qualifications, and necessary detail.
+uses short sentences and common vocabulary. Intermediate uses moderate
+sentence length and familiar academic words. Advanced uses concise academic
+wording while retaining technical terms. Every level is instructed to retain
+facts, names, numbers, qualifications, and necessary detail, and none may add
+definitions, examples, or background that the source does not state (the
+factuality review treats any added fact as a failure).
 
 The current UI rejects input longer than 20,000 characters. The backend uses
 the same default limit through `SIMPLIFIER_MAX_INPUT_CHARS`. The UI timeout is
-120 seconds. Each backend request defaults to a 15-second timeout, bounded at
-15 seconds so the maximum three generation calls, three verification calls,
-and two embedding calls (one per text) fit within the UI timeout. Pauses of
-1 to 2 seconds between retries of temporary errors add a few more seconds. End-to-end time depends on
+180 seconds. Each backend request defaults to a 15-second timeout, bounded at
+15 seconds. The worst case is five generation requests (three that return a
+response plus two retries of temporary errors), three verification requests,
+and two embedding requests (one per text), about 150 seconds, plus 1 to 2
+second pauses between retries of temporary errors. End-to-end time depends on
 network and model availability.
 
 ## Metrics
@@ -39,9 +42,13 @@ cannot produce overall `PASS`.
 
 `attempts` is the number of generation requests started by the pipeline.
 Provider SDK retries are disabled so one pipeline attempt maps to one provider
-request. Verification and embedding requests do not count. The default maximum is three, configurable
-with `SIMPLIFIER_MAX_ATTEMPTS` (1–5). A failed verification prompts another
-generation with feedback. A transient generation error may also be retried.
+request. Verification and embedding requests do not count. The default maximum
+is three generation requests that return a response, configurable with
+`SIMPLIFIER_MAX_ATTEMPTS` (1–5). A failed verification prompts another
+generation with feedback. A transient generation error (timeout, rate limit,
+HTTP 5xx) is retried at most twice, with a short pause, and these retries do not
+use up the three response attempts, but they are counted in `attempts` because
+each one is a started request. `attempts` can therefore exceed the maximum.
 
 ## Configuration
 

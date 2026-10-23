@@ -44,7 +44,7 @@ def get_settings() -> Settings:
         or "gemini-embedding-2-preview",
         max_attempts=_positive_int("SIMPLIFIER_MAX_ATTEMPTS", 3, maximum=5),
         max_input_chars=_positive_int("SIMPLIFIER_MAX_INPUT_CHARS", 20_000),
-        # Up to 3 generations, 3 verification requests and one embedding request
-        # must fit inside the UI's 120-second total timeout.
+        # Worst case 5 generations, 3 verification requests and 2 embedding requests
+        # must fit inside the UI's 180-second total timeout.
         timeout_seconds=_positive_float("GEMINI_TIMEOUT_SECONDS", 15.0, maximum=15.0),
     )
