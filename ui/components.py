@@ -75,7 +75,7 @@ def render_comparison(entry: dict) -> None:
         st.markdown("##### Original text")
         text_box(entry["original_text"])
     with right:
-        st.markdown(f"##### Simplified text ({entry['level']})")
+        st.markdown("##### Simplified text")
         if entry["simplified_text"].strip():
             text_box(entry["simplified_text"])
         else:
@@ -116,7 +116,7 @@ def render_metrics(entry: dict) -> None:
     st.markdown("### Metrics")
     top = st.columns(3)
     top[0].metric("Readability score", _na(metrics["readability_score"], "{:.1f}"))
-    top[1].metric("Semantic similarity", _na(metrics["semantic_similarity"], "{:.2f}"))
+    top[1].metric("Similarity", _na(metrics["semantic_similarity"], "{:.2f}"))
     top[2].metric("Attempts", _na(entry["attempts"]))
     bottom = st.columns(3)
     bottom[0].metric("Words (original)", _na(metrics["word_count_original"], "{:,}"))
@@ -188,10 +188,13 @@ def render_result(entry: dict, view: str = "current") -> None:
         with st.expander(f"Notes about this response ({len(entry['warnings'])})"):
             for warning in entry["warnings"]:
                 st.markdown(f"- {warning}")
-    render_comparison(entry)
-    render_changes(entry)
-    render_verification(entry)
-    render_metrics(entry)
+    with st.container(border=True):
+        render_comparison(entry)
+        render_changes(entry)
+    with st.container(border=True):
+        render_verification(entry)
+    with st.container(border=True):
+        render_metrics(entry)
     render_downloads(entry, view)
 
 

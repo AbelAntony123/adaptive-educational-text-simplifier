@@ -1,5 +1,6 @@
 """Smoke tests that run the real app.py with Streamlit's built-in AppTest."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,7 @@ def new_app() -> AppTest:
 
 def run_simplify(at: AppTest, text: str = SAMPLE_TEXT, level: str = "Beginner") -> AppTest:
     at.text_area(key="input_text").set_value(text)
-    at.radio(key="level").set_value(level)
+    at.segmented_control(key="level").set_value(level)
     at.button(key="simplify_button").click().run()
     return at
 
@@ -34,8 +35,10 @@ def all_text(at: AppTest) -> str:
 
 def test_app_starts_with_no_errors_and_shows_title():
     at = new_app()
-    assert at.title[0].value == "Adaptive Educational Text Simplifier"
-    assert at.radio(key="level").options == ["Beginner", "Intermediate", "Advanced"]
+    headings = [re.sub(r"<[^>]+>", "", m.value) for m in at.markdown if "<h1>" in m.value]
+    assert any("Adaptive Educational Text Simplifier" in h for h in headings)
+    assert list(at.segmented_control(key="level").options) == ["Beginner", "Intermediate", "Advanced"]
+    assert at.segmented_control(key="level").value == "Beginner"
     assert "Your result will appear here" in all_text(at)
 
 
@@ -89,7 +92,7 @@ def test_result_shows_metrics_and_attempts():
     at = run_simplify(new_app())
     labels = {m.label: m.value for m in at.metric}
     assert labels["Readability score"] == "82.0"
-    assert labels["Semantic similarity"] == "0.71"
+    assert labels["Similarity"] == "0.71"
     assert labels["Attempts"] == "1"
 
 
@@ -99,7 +102,7 @@ def test_missing_metrics_display_na_not_zero():
     at = run_simplify(at)
     labels = {m.label: m.value for m in at.metric}
     assert labels["Readability score"] == "N/A"
-    assert labels["Semantic similarity"] == "N/A"
+    assert labels["Similarity"] == "N/A"
 
 
 def test_verification_fail_is_shown_as_fail():

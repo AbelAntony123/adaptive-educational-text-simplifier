@@ -19,7 +19,7 @@ from services.file_parser import SUPPORTED_EXTENSIONS, FileParseError, parse_upl
 from services.mock_data import MOCK_SCENARIOS, SAMPLE_TEXT
 from ui.components import LEVEL_HELP, render_history, render_result
 from ui.history import add_entry, clear_history, get_entries, init_history
-from ui.theme import apply_theme
+from ui.theme import apply_theme, hero, hint, step_heading
 
 MODE_MOCK = "Demo with mock data"
 MODE_BACKEND = "Real backend"
@@ -68,37 +68,39 @@ def render_sidebar() -> tuple[str, str]:
     return mode, scenario
 
 
-def render_input_panel() -> tuple[str, str, bool]:
-    st.subheader("1. Enter your text")
-    st.file_uploader(
-        f"Upload a file (optional): {', '.join(SUPPORTED_EXTENSIONS)}",
-        type=[ext.lstrip(".") for ext in SUPPORTED_EXTENSIONS],
-        key="uploader",
-        on_change=_load_upload,
-    )
-    if st.session_state.get("upload_error"):
-        st.error(st.session_state["upload_error"])
-    st.text_area(
-        "Educational text",
-        key="input_text",
-        height=220,
-        placeholder="Paste or type the text you want to simplify...",
-    )
-    text = st.session_state["input_text"]
-    info_col, sample_col = st.columns([3, 1])
-    info_col.caption(f"{len(text):,} / {MAX_INPUT_CHARS:,} characters")
-    sample_col.button("Use sample text", on_click=_use_sample)
+def render_input_panel() -> tuple[str, str | None, bool]:
+    with st.container(border=True):
+        step_heading(1, "Your text")
+        st.file_uploader(
+            f"Upload a file (optional): {', '.join(SUPPORTED_EXTENSIONS)}",
+            type=[ext.lstrip(".") for ext in SUPPORTED_EXTENSIONS],
+            key="uploader",
+            on_change=_load_upload,
+        )
+        if st.session_state.get("upload_error"):
+            st.error(st.session_state["upload_error"])
+        st.text_area(
+            "Educational text",
+            key="input_text",
+            height=200,
+            placeholder="Paste or type the text you want to simplify...",
+        )
+        text = st.session_state["input_text"]
+        info_col, sample_col = st.columns([3, 2])
+        info_col.caption(f"{len(text):,} / {MAX_INPUT_CHARS:,} characters")
+        sample_col.button("Use sample text", on_click=_use_sample)
 
-    st.subheader("2. Choose a difficulty level")
-    level = st.radio(
-        "Difficulty level",
-        LEVELS,
-        key="level",
-        horizontal=True,
-        captions=[LEVEL_HELP[name] for name in LEVELS],
-        label_visibility="collapsed",
-    )
-    clicked = st.button("Simplify text", type="primary", key="simplify_button")
+    with st.container(border=True):
+        step_heading(2, "Difficulty level")
+        level = st.segmented_control(
+            "Difficulty level",
+            LEVELS,
+            default=LEVELS[0],
+            key="level",
+            label_visibility="collapsed",
+        )
+        hint(LEVEL_HELP.get(level, "Choose a level to continue."))
+        clicked = st.button("Simplify text", type="primary", key="simplify_button")
     return text, level, clicked
 
 
@@ -109,13 +111,14 @@ def main() -> None:
     st.session_state.setdefault("current_entry", None)
     init_history(st.session_state)
 
+    apply_theme()
     mode, scenario = render_sidebar()
 
-    st.title("Adaptive Educational Text Simplifier")
-    apply_theme()
-    st.write(
-        "Rewrite educational text at the Beginner, Intermediate or Advanced level, "
-        "then compare it with the original, see how it was checked, and download the result."
+    hero(
+        "Adaptive Educational Text Simplifier",
+        "Paste a passage, pick a level, and compare. Every result shows how it was checked, "
+        "and anything that was not checked says so.",
+        highlight="Text Simplifier",
     )
 
     entries = get_entries(st.session_state)
@@ -135,8 +138,7 @@ def main() -> None:
                 st.session_state["current_entry"] = add_entry(st.session_state, result)
                 st.rerun()
         current = st.session_state["current_entry"]
-        st.divider()
-        st.subheader("3. Results")
+        step_heading(3, "Results")
         if current is None:
             st.info("Your result will appear here after you click **Simplify text**.")
         else:
