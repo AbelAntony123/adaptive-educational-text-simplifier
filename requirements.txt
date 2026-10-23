@@ -1,0 +1,4 @@
+# UI dependencies only (versions the UI was tested with).
+# Backend dependencies (LLM client, evaluation libraries) are added by the backend team.
+streamlit==1.65.0
+pytest==9.1.1
