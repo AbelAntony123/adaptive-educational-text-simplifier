@@ -47,12 +47,16 @@ def _client():
 def _safe_provider_error(exc: Exception) -> LLMError:
     name = type(exc).__name__.lower()
     status_code = getattr(exc, "code", None)
+    # Only the exception type and HTTP status are logged, never the response text or key.
+    logger.warning("Gemini request failed: type=%s status=%s", type(exc).__name__, status_code)
     if "timeout" in name or "deadline" in name or status_code in (408, 504):
         return LLMError("API_TIMEOUT", "Gemini did not respond before the configured timeout.")
     if "rate" in name or "resourceexhausted" in name or "quota" in name or status_code == 429:
         return LLMError("RATE_LIMIT", "Gemini rate or quota limit was reached. Try again later.")
     if "unauth" in name or "permission" in name or status_code in (401, 403):
         return LLMError("API_AUTH_ERROR", "Gemini rejected the request. Check the API key and project access.")
+    if status_code in (500, 502, 503):
+        return LLMError("API_ERROR", f"Gemini is temporarily unavailable (HTTP {status_code}). Try again shortly.")
     return LLMError("API_ERROR", "The Gemini request failed. Check connectivity and API availability.")
 
 
@@ -115,17 +119,29 @@ def verify_text(original_text: str, simplified_text: str) -> dict[str, Any]:
         raise _safe_provider_error(exc) from exc
 
 
+def _embed_one(client: Any, model: str, text: str) -> list[float]:
+    """Embed one text per request.
+
+    Some embedding models (for example gemini-embedding-2-preview) merge a list of
+    texts into a single vector, so two texts must never share one request.
+    """
+    response = client.models.embed_content(model=model, contents=text)
+    embeddings = list(response.embeddings or [])
+    if len(embeddings) != 1:
+        raise LLMError("METRIC_UNAVAILABLE", "Gemini returned unusable embeddings.")
+    return list(embeddings[0].values)
+
+
 def semantic_similarity(original_text: str, simplified_text: str) -> float:
     settings = get_settings()
     logger.info("LLM embedding model=%s prompt_version=%s", settings.embedding_model, PROMPT_VERSION)
     client = _client()
     try:
-        response = client.models.embed_content(
-            model=settings.embedding_model,
-            contents=[original_text, simplified_text],
-        )
-        vectors = [list(item.values) for item in response.embeddings]
-        if len(vectors) != 2 or not vectors[0] or len(vectors[0]) != len(vectors[1]):
+        vectors = [
+            _embed_one(client, settings.embedding_model, original_text),
+            _embed_one(client, settings.embedding_model, simplified_text),
+        ]
+        if not vectors[0] or len(vectors[0]) != len(vectors[1]):
             raise LLMError("METRIC_UNAVAILABLE", "Gemini returned unusable embeddings.")
         dot = sum(a * b for a, b in zip(vectors[0], vectors[1]))
         norm_a = sum(a * a for a in vectors[0]) ** 0.5

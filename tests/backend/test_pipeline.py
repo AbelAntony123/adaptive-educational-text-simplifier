@@ -119,12 +119,48 @@ class GeminiClientTests(unittest.TestCase):
 
     def test_embedding_similarity_uses_zero_to_one_scale(self):
         fake = SimpleNamespace(models=SimpleNamespace(
-            embed_content=lambda **kwargs: SimpleNamespace(embeddings=[
-                SimpleNamespace(values=[1.0, 0.0]), SimpleNamespace(values=[1.0, 0.0]),
-            ]),
+            embed_content=lambda **kwargs: SimpleNamespace(embeddings=[SimpleNamespace(values=[1.0, 0.0])]),
         ))
         with patch.object(llm_client, "_client", return_value=fake):
             self.assertEqual(llm_client.semantic_similarity(TEXT, SIMPLIFIED), 1.0)
+
+    def test_embedding_texts_are_sent_in_separate_requests(self):
+        # gemini-embedding-2-preview merges a list of texts into ONE vector, so each
+        # text must be embedded on its own.
+        requests = []
+
+        def embed_content(**kwargs):
+            requests.append(kwargs["contents"])
+            vector = [1.0, 0.0] if kwargs["contents"] == TEXT else [0.0, 1.0]
+            return SimpleNamespace(embeddings=[SimpleNamespace(values=vector)])
+
+        fake = SimpleNamespace(models=SimpleNamespace(embed_content=embed_content))
+        with patch.object(llm_client, "_client", return_value=fake):
+            score = llm_client.semantic_similarity(TEXT, SIMPLIFIED)
+        self.assertEqual(requests, [TEXT, SIMPLIFIED])
+        self.assertAlmostEqual(score, 0.5)  # orthogonal vectors: cosine 0 -> (0 + 1) / 2
+
+    def test_unexpected_embedding_count_is_metric_unavailable(self):
+        for embeddings in ([], [SimpleNamespace(values=[1.0]), SimpleNamespace(values=[1.0])], None):
+            with self.subTest(count=None if embeddings is None else len(embeddings)):
+                fake = SimpleNamespace(models=SimpleNamespace(
+                    embed_content=lambda **kwargs: SimpleNamespace(embeddings=embeddings),
+                ))
+                with patch.object(llm_client, "_client", return_value=fake):
+                    with self.assertRaises(LLMError) as raised:
+                        llm_client.semantic_similarity(TEXT, SIMPLIFIED)
+                self.assertEqual(raised.exception.code, "METRIC_UNAVAILABLE")
+
+    def test_server_overload_is_reported_with_status_and_logged_without_provider_text(self):
+        error = Exception("private provider response")
+        error.code = 503
+        with self.assertLogs("pipeline.llm_client", level="WARNING") as logs:
+            mapped = llm_client._safe_provider_error(error)
+        self.assertEqual(mapped.code, "API_ERROR")
+        self.assertIn("503", mapped.public_message)
+        self.assertNotIn("private provider response", mapped.public_message)
+        self.assertIn("status=503", logs.output[0])
+        self.assertNotIn("private provider response", logs.output[0])
 
 
 class ApiTests(unittest.TestCase):
@@ -132,6 +168,9 @@ class ApiTests(unittest.TestCase):
         self.key_patch = patch.dict(os.environ, {"GEMINI_API_KEY": "test-key", "SIMPLIFIER_MAX_ATTEMPTS": "3"})
         self.key_patch.start()
         self.addCleanup(self.key_patch.stop)
+        self.sleep_patch = patch.object(api, "_sleep")  # keep retry tests fast
+        self.sleep = self.sleep_patch.start()
+        self.addCleanup(self.sleep_patch.stop)
 
     def test_all_levels_return_contract_shape(self):
         for level in LEVEL_INSTRUCTIONS:
@@ -192,6 +231,18 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(result["errors"][0]["code"], "API_TIMEOUT")
         self.assertEqual(result["attempts"], 3)
         self.assertEqual(generate.call_count, 3)
+
+    def test_transient_errors_pause_between_retries_but_not_after_the_last(self):
+        with patch.object(api, "generate_text", side_effect=LLMError("API_ERROR", "Unavailable.")):
+            api.simplify_text(TEXT, "Beginner")
+        self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1.0, 2.0])
+
+    def test_non_transient_errors_do_not_pause_or_retry(self):
+        with patch.object(api, "generate_text", side_effect=LLMError("API_AUTH_ERROR", "Rejected.")) as generate:
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(generate.call_count, 1)
+        self.assertEqual(result["attempts"], 1)
+        self.sleep.assert_not_called()
 
     def test_rate_limit_and_generic_exception_have_safe_errors(self):
         for exception, code in [

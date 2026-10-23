@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from .config import get_settings
 from .evaluation import calculate_metrics
 from .llm_client import LLMError, generate_text, semantic_similarity
@@ -10,6 +12,10 @@ from .verification import verify
 
 LEVELS = ("Beginner", "Intermediate", "Advanced")
 STATUSES = ("PASS", "FAIL", "NOT RUN")
+
+# Seconds to wait before retrying a temporary provider error (for example HTTP 503).
+RETRY_PAUSES = (1.0, 2.0, 2.0, 2.0)
+_sleep = time.sleep
 
 
 def _error(code: str, message: str) -> dict:
@@ -74,6 +80,7 @@ def simplify_text(original_text: str, level: str) -> dict:
             errors.append(_error(exc.code, exc.public_message))
             # Retrying transient provider errors can recover from a brief interruption.
             if exc.code in {"API_TIMEOUT", "RATE_LIMIT", "API_ERROR"} and attempts < settings.max_attempts:
+                _sleep(RETRY_PAUSES[min(attempts - 1, len(RETRY_PAUSES) - 1)])
                 continue
             break
         if not candidate or candidate == text.strip():

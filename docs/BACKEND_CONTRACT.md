@@ -19,13 +19,14 @@ The current UI rejects input longer than 20,000 characters. The backend uses
 the same default limit through `SIMPLIFIER_MAX_INPUT_CHARS`. The UI timeout is
 120 seconds. Each backend request defaults to a 15-second timeout, bounded at
 15 seconds so the maximum three generation calls, three verification calls,
-and one embedding call fit within the UI timeout. End-to-end time depends on
+and two embedding calls (one per text) fit within the UI timeout. Pauses of
+1 to 2 seconds between retries of temporary errors add a few more seconds. End-to-end time depends on
 network and model availability.
 
 ## Metrics
 
 - `readability_score`: Flesch Reading Ease, `206.835 - 1.015 × (words / sentences) - 84.6 × (syllables / words)`. The scale is conventionally about 0–100; higher means easier. Syllables are estimated with a lightweight English spelling heuristic.
-- `semantic_similarity`: cosine similarity between Gemini text embeddings, rescaled to 0–1 using `(cosine + 1) / 2`. It indicates textual similarity only; it does not prove factual correctness. If embedding computation fails, the value is `None`.
+- `semantic_similarity`: cosine similarity between Gemini text embeddings (each text is embedded in its own request, because `gemini-embedding-2-preview` merges a list of texts into one vector), rescaled to 0–1 using `(cosine + 1) / 2`. It indicates textual similarity only; it does not prove factual correctness. If embedding computation fails, the value is `None`.
 - Word counts use a Unicode-aware word-token regular expression. A metric that cannot be computed is `None`.
 
 ## Verification and retries
