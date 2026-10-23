@@ -11,14 +11,14 @@ from pipeline.llm_client import LLMError
 from pipeline import llm_client
 from pipeline.config import get_settings
 from pipeline.prompts import LEVEL_INSTRUCTIONS, simplification_prompt
-from pipeline.verification import verify
+from pipeline.verification import simplification_check, verify
 
 
 TEXT = "cells contain 42 parts and help the body function."
 SIMPLIFIED = "cells have 42 parts that help the body work."
 
 
-def passing_checks(original, simplified):
+def passing_checks(original, simplified, level=None):
     return [
         {"check": "facts", "status": "PASS", "explanation": "Checked."},
         {"check": "meaning", "status": "PASS", "explanation": "Preserved."},
@@ -90,6 +90,52 @@ class VerificationTests(unittest.TestCase):
 
         details = verify(TEXT, SIMPLIFIED, verifier=unavailable)
         self.assertEqual([item["status"] for item in details[-2:]], ["NOT RUN", "NOT RUN"])
+
+
+# Real texts from a live run (source and two outputs), used to calibrate the check.
+LIVE_SOURCE = (
+    "Photosynthesis is the biochemical process by which autotrophic organisms, such as plants and algae, convert "
+    "light energy into chemical energy. During the light-dependent reactions, chlorophyll absorbs photons, driving "
+    "the synthesis of ATP and NADPH, which subsequently power the Calvin cycle, wherein carbon dioxide is fixed "
+    "into glucose."
+)
+LIVE_BEGINNER = (
+    "Photosynthesis is a biochemical process. Autotrophic organisms, such as plants and algae, use it to convert "
+    "light energy into chemical energy. During the light-dependent reactions, chlorophyll absorbs photons. This "
+    "drives the synthesis of ATP and NADPH. These then power the Calvin cycle, where carbon dioxide is fixed into "
+    "glucose."
+)
+
+
+class SimplificationCheckTests(unittest.TestCase):
+    def test_real_beginner_output_passes_and_reports_the_numbers(self):
+        check = simplification_check(LIVE_SOURCE, LIVE_BEGINNER, "Beginner")
+        self.assertEqual(check["status"], "PASS")
+        self.assertIn("20.3 to 44.4", check["explanation"])
+
+    def test_near_copy_fails_with_actionable_feedback(self):
+        check = simplification_check(LIVE_SOURCE, LIVE_SOURCE.replace("Photosynthesis", "Photosynthesis,"), "Beginner")
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("shorter sentences", check["explanation"])
+
+    def test_advanced_has_no_simplification_target(self):
+        self.assertEqual(simplification_check(LIVE_SOURCE, LIVE_SOURCE, "Advanced")["status"], "PASS")
+
+    def test_already_easy_source_passes(self):
+        easy = "The cat sat on the mat. It was warm."
+        self.assertEqual(simplification_check(easy, easy + " Yes.", "Beginner")["status"], "PASS")
+
+    def test_uncomputable_readability_is_not_run(self):
+        self.assertEqual(simplification_check("...", "...", "Beginner")["status"], "NOT RUN")
+
+    def test_verify_includes_the_check_only_when_a_level_is_given(self):
+        verifier = lambda *_: {
+            "supported": True, "meaning_preserved": True, "unsupported_claims": [], "omissions": [], "explanation": "ok",
+        }
+        without = verify(LIVE_SOURCE, LIVE_BEGINNER, verifier=verifier)
+        with_level = verify(LIVE_SOURCE, LIVE_BEGINNER, verifier=verifier, level="Beginner")
+        self.assertNotIn("Simplification effect", [d["check"] for d in without])
+        self.assertIn("Simplification effect", [d["check"] for d in with_level])
 
 
 class GeminiClientTests(unittest.TestCase):

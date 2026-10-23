@@ -35,8 +35,16 @@ network and model availability.
 ## Verification and retries
 
 Verification combines preservation checks for detected numbers, capitalized
-names and hyphenated terms; an output-length sanity check; and a second Gemini
-review for unsupported claims and meaning omissions. These are automated
+names and hyphenated terms; an output-length sanity check; a "Simplification
+effect" check; and a second Gemini review for unsupported claims and meaning
+omissions. The simplification check is deterministic: for Beginner the output
+must raise the Flesch Reading Ease by at least 5 points or shorten the average
+sentence by at least 20%; for Intermediate, 2 points or 10%. Sources that
+already score 70 (Beginner) or 60 (Intermediate) or higher pass automatically,
+and Advanced has no target. The explanation shows the before and after
+readability and sentence length. The thresholds live in
+`SIMPLIFICATION_TARGETS` in `pipeline/verification.py` and are research
+settings to tune. These are automated
 signals, not a guarantee of factual truth. A skipped review is `NOT RUN` and
 cannot produce overall `PASS`.
 

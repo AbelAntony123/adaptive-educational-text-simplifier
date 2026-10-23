@@ -99,7 +99,7 @@ def simplify_text(original_text: str, level: str) -> dict:
             continue
 
         best_text = candidate
-        best_details = verify(text, candidate)
+        best_details = verify(text, candidate, level=level_value)
         status = _overall_status(best_details)
         if status == "PASS":
             break

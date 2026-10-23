@@ -34,6 +34,14 @@ def readability_score(text: str) -> float | None:
     return round(score, 2)
 
 
+def average_sentence_length(text: str) -> float | None:
+    """Average number of words per sentence, or None if the text has no sentences."""
+    sentences = [s for s in _SENTENCE_RE.findall(text) if _WORD_RE.search(s)]
+    if not sentences:
+        return None
+    return word_count(text) / len(sentences)
+
+
 def calculate_metrics(original_text: str, simplified_text: str, similarity_fn=None) -> dict:
     metrics = {
         "readability_score": readability_score(simplified_text),

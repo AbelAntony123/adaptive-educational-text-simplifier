@@ -4,7 +4,47 @@ from __future__ import annotations
 
 import re
 
+from .evaluation import average_sentence_length, readability_score
 from .llm_client import verify_text
+
+# Minimum improvement over the original, per level. A level passes if the Flesch
+# Reading Ease rises by `gain` points OR the average sentence gets `shrink` shorter.
+# Texts that already score `easy_enough` or better need no further simplification.
+# Advanced has no target: it only keeps the text faithful and concise.
+# These are starting values chosen from live runs (Beginner and Intermediate outputs
+# beat them by a wide margin); they are research settings to tune, not facts.
+SIMPLIFICATION_TARGETS = {
+    "Beginner": {"gain": 5.0, "shrink": 0.20, "easy_enough": 70.0},
+    "Intermediate": {"gain": 2.0, "shrink": 0.10, "easy_enough": 60.0},
+}
+
+
+def simplification_check(original: str, simplified: str, level: str) -> dict[str, str]:
+    """Deterministic check that the output is measurably easier to read than the source."""
+    name = "Simplification effect"
+    target = SIMPLIFICATION_TARGETS.get(level)
+    if target is None:
+        return {"check": name, "status": "PASS", "explanation": f"No simplification target is set for the {level} level."}
+    before, after = readability_score(original), readability_score(simplified)
+    length_before, length_after = average_sentence_length(original), average_sentence_length(simplified)
+    if None in (before, after, length_before, length_after):
+        return {"check": name, "status": "NOT RUN", "explanation": "Readability could not be computed for this text."}
+    numbers = (
+        f"Readability {before:.1f} to {after:.1f} (higher is easier); "
+        f"average sentence length {length_before:.0f} to {length_after:.0f} words."
+    )
+    if before >= target["easy_enough"]:
+        return {"check": name, "status": "PASS", "explanation": f"The source is already easy to read. {numbers}"}
+    if after - before >= target["gain"] or length_after <= length_before * (1 - target["shrink"]):
+        return {"check": name, "status": "PASS", "explanation": f"The output is measurably easier to read. {numbers}"}
+    return {
+        "check": name,
+        "status": "FAIL",
+        "explanation": (
+            f"The output is not clearly simpler for the {level} level. {numbers} "
+            "Use shorter sentences and simpler words while keeping every fact."
+        ),
+    }
 
 _NUMBER_RE = re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*(?:%|°[CF])?(?!\w)")
 _CAPITALIZED_RE = re.compile(r"\b[A-Z][A-Za-z0-9-]*(?:\s+[A-Z][A-Za-z0-9-]*)*")
@@ -22,7 +62,7 @@ def _missing_terms(original: str, simplified: str) -> list[str]:
     return sorted(term for term in targets if term.casefold() not in folded)
 
 
-def verify(original: str, simplified: str, verifier=verify_text) -> list[dict[str, str]]:
+def verify(original: str, simplified: str, verifier=verify_text, level: str | None = None) -> list[dict[str, str]]:
     details: list[dict[str, str]] = []
     missing = _missing_terms(original, simplified)
     details.append(
@@ -46,6 +86,8 @@ def verify(original: str, simplified: str, verifier=verify_text) -> list[dict[st
             "explanation": "Output is empty or exceeds the length sanity bound." if length_bad else "Output length is within the sanity bound.",
         }
     )
+    if level is not None:
+        details.append(simplification_check(original, simplified, level))
     try:
         result = verifier(original, simplified)
         unsupported = result.get("unsupported_claims", [])

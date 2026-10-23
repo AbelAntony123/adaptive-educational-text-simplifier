@@ -1,18 +1,18 @@
 """Versioned prompts for learner-level adaptation and factuality review."""
 
-PROMPT_VERSION = "2026-10-23.2"
+PROMPT_VERSION = "2026-10-23.3"
 
 # The factuality review rejects any added fact, so no level asks the model to add
 # definitions or explanations; simplification works by shorter sentences and plainer words.
 LEVEL_INSTRUCTIONS = {
     "Beginner": (
-        "Use short sentences and common everyday words. Split long sentences into several short ones and replace "
+        "Use short sentences (about 10 to 14 words each) and common everyday words. Split long sentences into several short ones and replace "
         "hard words with simpler words where the meaning stays the same. Keep every key fact, number, name, "
         "relationship, and necessary technical term exactly as the source states it, and keep the text about as "
         "long as the source."
     ),
     "Intermediate": (
-        "Use clear sentences of moderate length and familiar academic vocabulary. Replace rare words with more "
+        "Use clear sentences of moderate length (about 15 to 20 words each) and familiar academic vocabulary. Replace rare words with more "
         "familiar ones where the meaning stays the same. "
         "Keep all key facts, numbers, names, relationships, necessary technical terms, and supporting detail."
     ),
