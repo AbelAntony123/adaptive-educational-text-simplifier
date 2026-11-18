@@ -50,6 +50,7 @@ MOCK_SCENARIOS = {
     "Verification not run": "verification_not_run",
     "Some metrics missing": "missing_metrics",
     "Backend reports an error": "backend_error",
+    "Quota used up (HTTP 429)": "rate_limit",
     "Malformed response": "malformed",
     "Backend crashes (exception)": "exception",
 }
@@ -135,6 +136,23 @@ def mock_simplify_text(original_text: str, level: str, scenario: str = "success"
     elif scenario == "missing_metrics":
         response["metrics"]["readability_score"] = None
         response["metrics"]["semantic_similarity"] = None
+    elif scenario == "rate_limit":
+        response["simplified_text"] = ""
+        response["verification_status"] = "NOT RUN"
+        response["verification_details"] = []
+        response["metrics"] = {
+            "readability_score": None,
+            "semantic_similarity": None,
+            "word_count_original": _word_count(original_text),
+            "word_count_simplified": None,
+        }
+        response["attempts"] = 1
+        response["errors"] = [
+            {
+                "code": "RATE_LIMIT",
+                "message": "Simulated error: Gemini's per-minute limit was reached. Wait about 30 seconds, then try again.",
+            }
+        ]
     elif scenario == "backend_error":
         response["simplified_text"] = ""
         response["verification_status"] = "NOT RUN"

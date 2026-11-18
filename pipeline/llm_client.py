@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import re
 from typing import Any
 
 from .config import get_settings
@@ -15,10 +17,13 @@ logger = logging.getLogger(__name__)
 class LLMError(Exception):
     """Provider failure with a stable, safe public error code."""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, retry_after: float | None = None, daily: bool = False):
         super().__init__(message)
         self.code = code
         self.public_message = message
+        # Only used for RATE_LIMIT: seconds Google asked us to wait, and whether a daily quota ran out.
+        self.retry_after = retry_after
+        self.daily = daily
 
 
 def _client():
@@ -44,6 +49,31 @@ def _client():
         raise _safe_provider_error(exc) from exc
 
 
+_RETRY_AFTER_RE = re.compile(r"retry(?:Delay|\s+in)?\D{0,6}(\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
+_DAILY_RE = re.compile(r"PerDay|per\s+day|daily", re.IGNORECASE)
+
+
+def _quota_details(exc: Exception) -> tuple[float | None, bool]:
+    """Read (seconds to wait, daily quota used up) from a 429 error. Only numbers and a yes/no leave this function."""
+    text = str(exc)
+    match = _RETRY_AFTER_RE.search(text)
+    return (float(match.group(1)) if match else None), bool(_DAILY_RE.search(text))
+
+
+def _rate_limit_error(exc: Exception) -> LLMError:
+    retry_after, daily = _quota_details(exc)
+    if daily:
+        message = (
+            "Gemini's daily quota for this model is used up. Try again tomorrow, choose another model, "
+            "or switch to the demo data."
+        )
+    elif retry_after is not None:
+        message = f"Gemini's per-minute limit was reached. Wait about {math.ceil(retry_after)} seconds, then try again."
+    else:
+        message = "Gemini rate or quota limit was reached. Wait about a minute before trying again."
+    return LLMError("RATE_LIMIT", message, retry_after=retry_after, daily=daily)
+
+
 def _safe_provider_error(exc: Exception) -> LLMError:
     name = type(exc).__name__.lower()
     status_code = getattr(exc, "code", None)
@@ -52,7 +82,7 @@ def _safe_provider_error(exc: Exception) -> LLMError:
     if "timeout" in name or "deadline" in name or status_code in (408, 504):
         return LLMError("API_TIMEOUT", "Gemini did not respond before the configured timeout.")
     if "rate" in name or "resourceexhausted" in name or "quota" in name or status_code == 429:
-        return LLMError("RATE_LIMIT", "Gemini rate or quota limit was reached. Wait about a minute before trying again.")
+        return _rate_limit_error(exc)
     if "unauth" in name or "permission" in name or status_code in (401, 403):
         return LLMError("API_AUTH_ERROR", "Gemini rejected the request. Check the API key and project access.")
     if status_code in (500, 502, 503):

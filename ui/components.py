@@ -67,6 +67,12 @@ def render_changes(entry: dict) -> None:
 def render_errors(entry: dict) -> None:
     for error in entry["errors"]:
         st.error(f"**{error['code']}**: {error['message']}")
+    if any(error["code"] == "RATE_LIMIT" for error in entry["errors"]):
+        st.info(
+            "**What you can do:** wait for the time shown above, then click **Simplify text** again. "
+            "Or choose **Demo with mock data** in the sidebar to keep exploring the interface. "
+            "Demo results are never real model output."
+        )
 
 
 def render_comparison(entry: dict) -> None:

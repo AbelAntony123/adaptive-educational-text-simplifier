@@ -18,9 +18,12 @@ RETRY_PAUSES = (1.0, 2.0, 2.0, 2.0)
 # Temporary errors get their own small retry budget, so a busy provider does not
 # use up the attempts reserved for fixing verification failures.
 MAX_TRANSIENT_RETRIES = 2
-# RATE_LIMIT is deliberately not retried: a per-minute quota needs a much longer wait
-# than the short pauses here, and quick retries only use up more of the quota.
+# RATE_LIMIT is not in this set: quick retries only use up more quota, so it has its own rule below.
 TRANSIENT_CODES = {"API_TIMEOUT", "API_ERROR"}
+# A per-minute quota (HTTP 429) is retried once, but only when Google asks for a short wait.
+# A daily quota, or a long wait, is reported straight away.
+MAX_QUOTA_RETRIES = 1
+MAX_QUOTA_WAIT_SECONDS = 20.0
 _sleep = time.sleep
 
 
@@ -77,6 +80,7 @@ def simplify_text(original_text: str, level: str) -> dict:
     attempts = 0  # every generation request started; this is what the UI shows
     generated = 0  # requests that returned a response; limited by max_attempts
     transient_retries = 0
+    quota_retries = 0
     errors: list[dict] = []
     retry_feedback = ""
 
@@ -85,12 +89,23 @@ def simplify_text(original_text: str, level: str) -> dict:
         try:
             candidate = generate_text(text, level_value, retry_feedback).strip()
         except LLMError as exc:
-            errors.append(_error(exc.code, exc.public_message))
-            # Retrying transient provider errors can recover from a brief interruption.
+            # A failure that is retried and then recovers is not reported; only the one we give up on is.
             if exc.code in TRANSIENT_CODES and transient_retries < MAX_TRANSIENT_RETRIES:
                 _sleep(RETRY_PAUSES[min(transient_retries, len(RETRY_PAUSES) - 1)])
                 transient_retries += 1
                 continue
+            wait = getattr(exc, "retry_after", None)
+            if (
+                exc.code == "RATE_LIMIT"
+                and not getattr(exc, "daily", False)
+                and wait is not None
+                and wait <= MAX_QUOTA_WAIT_SECONDS
+                and quota_retries < MAX_QUOTA_RETRIES
+            ):
+                _sleep(wait + 1)
+                quota_retries += 1
+                continue
+            errors.append(_error(exc.code, exc.public_message))
             break
         generated += 1
         if not candidate or candidate == text.strip():

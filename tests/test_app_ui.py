@@ -129,6 +129,17 @@ def test_backend_error_message_is_displayed():
     assert any("MOCK_RATE_LIMIT" in e.value for e in at.error)
 
 
+def test_quota_error_shows_clear_message_and_what_to_do_not_a_bad_output():
+    at = new_app()
+    at.selectbox(key="scenario").select("Quota used up (HTTP 429)")
+    at = run_simplify(at)
+    assert not at.exception
+    assert any("RATE_LIMIT" in e.value for e in at.error)
+    assert any("What you can do" in i.value for i in at.info)
+    assert at.session_state["current_entry"]["simplified_text"] == ""
+    assert at.session_state["current_entry"]["verification_status"] == "NOT RUN"
+
+
 @pytest.mark.parametrize("scenario", ["Malformed response", "Backend crashes (exception)"])
 def test_bad_backend_behaviour_does_not_crash_the_app(scenario):
     at = new_app()

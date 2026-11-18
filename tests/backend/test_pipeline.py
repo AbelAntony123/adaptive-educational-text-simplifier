@@ -205,6 +205,35 @@ class GeminiClientTests(unittest.TestCase):
                         llm_client.semantic_similarity(TEXT, SIMPLIFIED)
                 self.assertEqual(raised.exception.code, "METRIC_UNAVAILABLE")
 
+    def test_429_with_retry_delay_gives_seconds_and_a_clear_message(self):
+        error = Exception("429 RESOURCE_EXHAUSTED {'retryDelay': '34s'} private details")
+        error.code = 429
+        mapped = llm_client._safe_provider_error(error)
+        self.assertEqual(mapped.code, "RATE_LIMIT")
+        self.assertEqual(mapped.retry_after, 34.0)
+        self.assertFalse(mapped.daily)
+        self.assertIn("34 seconds", mapped.public_message)
+        self.assertNotIn("private details", mapped.public_message)
+
+    def test_429_with_fractional_delay_is_rounded_up(self):
+        error = Exception("Please retry in 34.5s.")
+        error.code = 429
+        self.assertIn("35 seconds", llm_client._safe_provider_error(error).public_message)
+
+    def test_429_daily_quota_is_flagged(self):
+        error = Exception("Quota exceeded for metric GenerateRequestsPerDayPerProjectPerModel retryDelay 20s")
+        error.code = 429
+        mapped = llm_client._safe_provider_error(error)
+        self.assertTrue(mapped.daily)
+        self.assertIn("daily quota", mapped.public_message)
+
+    def test_429_without_details_still_gives_a_clear_message(self):
+        error = Exception("quota")
+        error.code = 429
+        mapped = llm_client._safe_provider_error(error)
+        self.assertIsNone(mapped.retry_after)
+        self.assertIn("about a minute", mapped.public_message)
+
     def test_server_overload_is_reported_with_status_and_logged_without_provider_text(self):
         error = Exception("private provider response")
         error.code = 503
@@ -314,6 +343,36 @@ class ApiTests(unittest.TestCase):
             result = api.simplify_text(TEXT, "Beginner")
         self.assertEqual(result["errors"][0]["code"], "API_ERROR")
         self.assertEqual(result["attempts"], 3)
+
+    def test_short_per_minute_limit_is_waited_out_once_and_recovers_silently(self):
+        limited = LLMError("RATE_LIMIT", "Limited.", retry_after=5.0)
+        with patch.object(api, "generate_text", side_effect=[limited, SIMPLIFIED]) as generate, patch.object(
+            api, "verify", side_effect=passing_checks
+        ), patch.object(api, "semantic_similarity", return_value=0.8):
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(generate.call_count, 2)
+        self.assertEqual(result["verification_status"], "PASS")
+        self.assertEqual(result["errors"], [])  # the recovered error is not reported
+        self.assertEqual(result["attempts"], 2)
+        self.sleep.assert_called_once_with(6.0)
+
+    def test_per_minute_limit_is_waited_out_only_once(self):
+        limited = LLMError("RATE_LIMIT", "Limited.", retry_after=5.0)
+        with patch.object(api, "generate_text", side_effect=limited) as generate:
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(generate.call_count, 2)
+        self.assertEqual(result["errors"][0]["code"], "RATE_LIMIT")
+
+    def test_long_wait_and_daily_quota_are_not_retried(self):
+        for error in (
+            LLMError("RATE_LIMIT", "Limited.", retry_after=60.0),
+            LLMError("RATE_LIMIT", "Daily.", retry_after=5.0, daily=True),
+        ):
+            with self.subTest(daily=error.daily), patch.object(api, "generate_text", side_effect=error) as generate:
+                result = api.simplify_text(TEXT, "Beginner")
+            self.assertEqual(generate.call_count, 1)
+            self.assertEqual(result["errors"][0]["code"], "RATE_LIMIT")
+        self.sleep.assert_not_called()
 
     def test_rate_limit_is_not_retried_quickly(self):
         with patch.object(api, "generate_text", side_effect=LLMError("RATE_LIMIT", "Rate limited.")) as generate:
