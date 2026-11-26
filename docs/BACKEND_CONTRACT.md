@@ -20,11 +20,15 @@ factuality review treats any added fact as a failure).
 The current UI rejects input longer than 20,000 characters. The backend uses
 the same default limit through `SIMPLIFIER_MAX_INPUT_CHARS`. The UI timeout is
 180 seconds. Each backend request defaults to a 15-second timeout, bounded at
-15 seconds. The worst case is five generation requests (three that return a
-response plus two retries of temporary errors), three verification requests,
-and two embedding requests (one per text), about 150 seconds, plus 1 to 2
-second pauses between retries of temporary errors. End-to-end time depends on
-network and model availability.
+15 seconds. The worst case is three generation requests (the first try plus at
+most two retries of any kind), three verification requests and two embedding
+requests (one per text), eight requests in all, about 120 seconds, plus pauses
+between retries (1 to 2 seconds for temporary errors, up to 21 seconds once for
+a short per-minute quota wait). End-to-end time depends on network and model
+availability. A best-case run makes four requests: one generation, one
+verification and two embeddings. The embedding of the source text is kept in
+memory and reused for later levels and re-runs of the same text, so those
+need only one embedding request.
 
 ## Metrics
 
@@ -48,17 +52,21 @@ settings to tune. These are automated
 signals, not a guarantee of factual truth. A skipped review is `NOT RUN` and
 cannot produce overall `PASS`.
 
+The two Gemini review checks are skipped (reported as `NOT RUN`, with the reason
+"Skipped to save quota") when a local check has already failed, because the
+result will be rejected anyway. The overall status is still `FAIL`.
+
 `attempts` is the number of generation requests started by the pipeline.
 Provider SDK retries are disabled so one pipeline attempt maps to one provider
-request. Verification and embedding requests do not count. The default maximum
-is three generation requests that return a response, configurable with
-`SIMPLIFIER_MAX_ATTEMPTS` (1–5). A failed verification prompts another
-generation with feedback. A transient generation error (timeout or HTTP 5xx)
-is retried at most twice, with a short pause. A rate-limit or quota error is
-not retried, because quick retries use up more quota; the user is told to wait
-about a minute. Transient retries do not
-use up the three response attempts, but they are counted in `attempts` because
-each one is a started request. `attempts` can therefore exceed the maximum.
+request. Verification and embedding requests do not count. All retries, for any
+reason, share one budget: at most `SIMPLIFIER_MAX_ATTEMPTS` generation requests
+(default 3, so the first try plus two retries; range 1–5), and `attempts` never
+exceeds it. A failed verification prompts another generation with feedback. A
+transient error (timeout or HTTP 5xx) is retried after a short pause. A
+rate-limit (HTTP 429) error is retried once, but only when Google asks for a
+wait of 20 seconds or less; a longer wait or a daily quota is reported at once,
+with the number of seconds or "try again tomorrow" in the message. An error that
+is retried and then recovers is not reported in `errors`.
 
 ## Configuration
 

@@ -149,17 +149,30 @@ def verify_text(original_text: str, simplified_text: str) -> dict[str, Any]:
         raise _safe_provider_error(exc) from exc
 
 
+# Embeddings of texts already seen in this process (kept in memory only, never written to disk).
+# The same source text is embedded again for every level and every re-run, so reusing it saves requests.
+_EMBEDDING_CACHE: dict[tuple[str, str], list[float]] = {}
+_EMBEDDING_CACHE_LIMIT = 64
+
+
 def _embed_one(client: Any, model: str, text: str) -> list[float]:
     """Embed one text per request.
 
     Some embedding models (for example gemini-embedding-2-preview) merge a list of
     texts into a single vector, so two texts must never share one request.
     """
+    key = (model, text)
+    if key in _EMBEDDING_CACHE:
+        return _EMBEDDING_CACHE[key]
     response = client.models.embed_content(model=model, contents=text)
     embeddings = list(response.embeddings or [])
     if len(embeddings) != 1:
         raise LLMError("METRIC_UNAVAILABLE", "Gemini returned unusable embeddings.")
-    return list(embeddings[0].values)
+    vector = list(embeddings[0].values)
+    if len(_EMBEDDING_CACHE) >= _EMBEDDING_CACHE_LIMIT:
+        _EMBEDDING_CACHE.pop(next(iter(_EMBEDDING_CACHE)))  # drop the oldest entry
+    _EMBEDDING_CACHE[key] = vector
+    return vector
 
 
 def semantic_similarity(original_text: str, simplified_text: str) -> float:

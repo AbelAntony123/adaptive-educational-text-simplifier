@@ -19,6 +19,21 @@ LEVEL_HELP = {
 }
 
 
+_LOCAL_CHECKS = {"Numbers, names, and technical terms", "Output length sanity", "Simplification effect"}
+_MODEL_CHECKS = {"Model factuality review", "Meaning preservation review"}
+
+
+def check_kind(name: str, source: str) -> str:
+    """Say where a check really ran, so simulated and real checks can never be confused."""
+    if source == SOURCE_MOCK:
+        return "Simulated"
+    if name in _LOCAL_CHECKS:
+        return "Local check"
+    if name in _MODEL_CHECKS:
+        return "Gemini review"
+    return "Backend check"
+
+
 def _na(value, fmt: str = "{}") -> str:
     return "N/A" if value is None else fmt.format(value)
 
@@ -38,14 +53,22 @@ def render_summary_badges(entry: dict) -> None:
         badge("MOCK DATA", "warn") if entry["source"] == SOURCE_MOCK else badge("REAL BACKEND", "info")
     )
     attempts = "N/A" if entry["attempts"] is None else str(entry["attempts"])
-    badge_row(
-        [
-            source,
-            badge(f"Level: {entry['level']}", "neutral"),
-            status_badge(entry["verification_status"]),
-            badge(f"Attempts: {attempts}", "neutral"),
-        ]
-    )
+    badges = [
+        source,
+        badge(f"Level: {entry['level']}", "neutral"),
+        status_badge(entry["verification_status"]),
+        badge(f"Attempts: {attempts}", "neutral"),
+    ]
+    if entry.get("cached"):
+        badges.append(badge("REUSED RESULT", "info"))
+    if entry.get("fallback_notice"):
+        badges.append(badge("DEMO FALLBACK", "warn"))
+    badge_row(badges)
+
+
+def render_fallback_notice(entry: dict) -> None:
+    if entry.get("fallback_notice"):
+        st.warning(f"**Quota used up, so this is demo data.** {entry['fallback_notice']}")
 
 
 def render_changes(entry: dict) -> None:
@@ -107,7 +130,12 @@ def render_verification(entry: dict) -> None:
     if entry["verification_details"]:
         st.table(
             [
-                {"Check": d["check"], "Result": d["status"], "Explanation": d["explanation"]}
+                {
+                    "Check": d["check"],
+                    "Type": check_kind(d["check"], entry["source"]),
+                    "Result": d["status"],
+                    "Explanation": d["explanation"],
+                }
                 for d in entry["verification_details"]
             ]
         )
@@ -115,6 +143,11 @@ def render_verification(entry: dict) -> None:
         st.caption("No individual check details were provided.")
     if entry["source"] == SOURCE_MOCK:
         st.caption("These verification results are simulated by the demo.")
+    else:
+        st.caption(
+            "Local checks run on this computer and use no API requests. Gemini reviews use one request each "
+            "and are skipped when a local check has already failed."
+        )
 
 
 def render_metrics(entry: dict) -> None:
@@ -187,6 +220,7 @@ def render_downloads(entry: dict, key_prefix: str) -> None:
 def render_result(entry: dict, view: str = "current") -> None:
     """Show one complete result. ``view`` keeps widget keys unique across tabs."""
     entry = {**entry, "_view": view}
+    render_fallback_notice(entry)
     render_source_banner(entry["source"])
     render_summary_badges(entry)
     render_errors(entry)

@@ -15,9 +15,6 @@ STATUSES = ("PASS", "FAIL", "NOT RUN")
 
 # Seconds to wait before retrying a temporary provider error (for example HTTP 503).
 RETRY_PAUSES = (1.0, 2.0, 2.0, 2.0)
-# Temporary errors get their own small retry budget, so a busy provider does not
-# use up the attempts reserved for fixing verification failures.
-MAX_TRANSIENT_RETRIES = 2
 # RATE_LIMIT is not in this set: quick retries only use up more quota, so it has its own rule below.
 TRANSIENT_CODES = {"API_TIMEOUT", "API_ERROR"}
 # A per-minute quota (HTTP 429) is retried once, but only when Google asks for a short wait.
@@ -77,26 +74,27 @@ def simplify_text(original_text: str, level: str) -> dict:
 
     best_text = ""
     best_details: list[dict] = []
-    attempts = 0  # every generation request started; this is what the UI shows
-    generated = 0  # requests that returned a response; limited by max_attempts
-    transient_retries = 0
+    # Every generation request started, including retries of any kind. It is capped by
+    # max_attempts (default 3: the first try plus at most two retries), and it is what the UI shows.
+    attempts = 0
     quota_retries = 0
     errors: list[dict] = []
     retry_feedback = ""
 
-    while generated < settings.max_attempts:
+    while attempts < settings.max_attempts:
         attempts += 1
         try:
             candidate = generate_text(text, level_value, retry_feedback).strip()
         except LLMError as exc:
             # A failure that is retried and then recovers is not reported; only the one we give up on is.
-            if exc.code in TRANSIENT_CODES and transient_retries < MAX_TRANSIENT_RETRIES:
-                _sleep(RETRY_PAUSES[min(transient_retries, len(RETRY_PAUSES) - 1)])
-                transient_retries += 1
+            has_budget = attempts < settings.max_attempts
+            if has_budget and exc.code in TRANSIENT_CODES:
+                _sleep(RETRY_PAUSES[min(attempts - 1, len(RETRY_PAUSES) - 1)])
                 continue
             wait = getattr(exc, "retry_after", None)
             if (
-                exc.code == "RATE_LIMIT"
+                has_budget
+                and exc.code == "RATE_LIMIT"
                 and not getattr(exc, "daily", False)
                 and wait is not None
                 and wait <= MAX_QUOTA_WAIT_SECONDS
@@ -107,7 +105,6 @@ def simplify_text(original_text: str, level: str) -> dict:
                 continue
             errors.append(_error(exc.code, exc.public_message))
             break
-        generated += 1
         if not candidate or candidate == text.strip():
             retry_feedback = "The previous output was empty or unchanged. Produce a genuine rewrite while preserving meaning."
             errors.append(_error("MODEL_OUTPUT_INVALID", "Gemini returned empty or unchanged text."))

@@ -84,6 +84,33 @@ class VerificationTests(unittest.TestCase):
         })
         self.assertTrue(any(item["status"] == "FAIL" for item in details))
 
+    def test_model_review_is_skipped_when_a_local_check_already_failed(self):
+        calls = []
+
+        def verifier(*_):
+            calls.append(1)
+            return {}
+
+        details = verify(TEXT, "cells have parts that help the body work.", verifier=verifier)  # the number 42 is missing
+        self.assertEqual(calls, [])  # no Gemini request was spent
+        self.assertEqual(details[0]["status"], "FAIL")
+        self.assertEqual([d["status"] for d in details[-2:]], ["NOT RUN", "NOT RUN"])
+        self.assertIn("Skipped to save quota", details[-1]["explanation"])
+
+    def test_skipped_review_does_not_hide_the_failure(self):
+        details = verify(TEXT, "cells have parts that help the body work.", verifier=lambda *_: {})
+        self.assertEqual(api._overall_status(details), "FAIL")
+
+    def test_model_review_runs_when_local_checks_pass(self):
+        calls = []
+
+        def verifier(*_):
+            calls.append(1)
+            return {"supported": True, "meaning_preserved": True, "unsupported_claims": [], "omissions": [], "explanation": "ok"}
+
+        verify(TEXT, SIMPLIFIED, verifier=verifier)
+        self.assertEqual(calls, [1])
+
     def test_verification_unavailable_is_not_run(self):
         def unavailable(*_):
             raise LLMError("API_TIMEOUT", "Timed out.")
@@ -139,6 +166,32 @@ class SimplificationCheckTests(unittest.TestCase):
 
 
 class GeminiClientTests(unittest.TestCase):
+    def setUp(self):
+        llm_client._EMBEDDING_CACHE.clear()
+        self.addCleanup(llm_client._EMBEDDING_CACHE.clear)
+
+    def test_embedding_of_the_same_source_text_is_reused(self):
+        requests = []
+
+        def embed_content(**kwargs):
+            requests.append(kwargs["contents"])
+            return SimpleNamespace(embeddings=[SimpleNamespace(values=[1.0, 0.0])])
+
+        fake = SimpleNamespace(models=SimpleNamespace(embed_content=embed_content))
+        with patch.object(llm_client, "_client", return_value=fake):
+            llm_client.semantic_similarity(TEXT, "first rewrite")
+            llm_client.semantic_similarity(TEXT, "second rewrite")
+        self.assertEqual(requests, [TEXT, "first rewrite", "second rewrite"])  # the source was embedded once
+
+    def test_embedding_cache_is_bounded(self):
+        fake = SimpleNamespace(models=SimpleNamespace(
+            embed_content=lambda **kwargs: SimpleNamespace(embeddings=[SimpleNamespace(values=[1.0])]),
+        ))
+        with patch.object(llm_client, "_client", return_value=fake):
+            for number in range(llm_client._EMBEDDING_CACHE_LIMIT + 10):
+                llm_client._embed_one(fake, "model", f"text {number}")
+        self.assertEqual(len(llm_client._EMBEDDING_CACHE), llm_client._EMBEDDING_CACHE_LIMIT)
+
     def test_generation_uses_configured_model_and_returns_text(self):
         fake = SimpleNamespace(models=SimpleNamespace(
             generate_content=lambda **kwargs: SimpleNamespace(text="Readable version."),
@@ -320,16 +373,36 @@ class ApiTests(unittest.TestCase):
             api.simplify_text(TEXT, "Beginner")
         self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1.0, 2.0])
 
-    def test_temporary_errors_do_not_use_up_the_verification_retries(self):
+    def test_all_retries_share_one_budget_of_three_requests(self):
         busy = LLMError("API_ERROR", "Unavailable.")
         failed = [{"check": "facts", "status": "FAIL", "explanation": "Added claim."}]
-        with patch.object(api, "generate_text", side_effect=[busy, busy, "first rewrite", SIMPLIFIED, SIMPLIFIED]) as generate, patch.object(
-            api, "verify", side_effect=[failed, passing_checks(TEXT, SIMPLIFIED)]
+        # Two temporary errors use two of the three requests, leaving one real attempt.
+        with patch.object(api, "generate_text", side_effect=[busy, busy, "first rewrite", SIMPLIFIED]) as generate, patch.object(
+            api, "verify", side_effect=[failed]
         ), patch.object(api, "semantic_similarity", return_value=0.8):
             result = api.simplify_text(TEXT, "Beginner")
-        self.assertEqual(result["verification_status"], "PASS")
-        self.assertEqual(generate.call_count, 4)
-        self.assertEqual(result["attempts"], 4)  # every started request is counted
+        self.assertEqual(generate.call_count, 3)
+        self.assertEqual(result["attempts"], 3)
+        self.assertEqual(result["verification_status"], "FAIL")
+        self.assertEqual(result["simplified_text"], "first rewrite")
+
+    def test_a_mix_of_errors_never_exceeds_the_request_cap(self):
+        short_limit = LLMError("RATE_LIMIT", "Limited.", retry_after=2.0)
+        errors = [LLMError("API_TIMEOUT", "Timed out."), short_limit, LLMError("API_ERROR", "Unavailable."), short_limit]
+        with patch.object(api, "generate_text", side_effect=errors) as generate:
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(generate.call_count, 3)
+        self.assertEqual(result["attempts"], 3)
+        self.assertEqual(len(result["errors"]), 1)  # only the error we gave up on is reported
+
+    def test_the_request_cap_can_be_lowered_with_an_environment_variable(self):
+        with patch.dict(os.environ, {"SIMPLIFIER_MAX_ATTEMPTS": "1"}), patch.object(
+            api, "generate_text", side_effect=LLMError("API_ERROR", "Unavailable.")
+        ) as generate:
+            result = api.simplify_text(TEXT, "Beginner")
+        self.assertEqual(generate.call_count, 1)
+        self.assertEqual(result["attempts"], 1)
+        self.sleep.assert_not_called()
 
     def test_non_transient_errors_do_not_pause_or_retry(self):
         with patch.object(api, "generate_text", side_effect=LLMError("API_AUTH_ERROR", "Rejected.")) as generate:

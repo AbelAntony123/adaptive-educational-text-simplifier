@@ -15,6 +15,7 @@ from services.backend_adapter import (
     simplify,
     validate_input,
 )
+from services.env_file import load_env_file
 from services.file_parser import SUPPORTED_EXTENSIONS, FileParseError, parse_uploaded_file
 from services.mock_data import MOCK_SCENARIOS, SAMPLE_TEXT
 from ui.components import LEVEL_HELP, render_history, render_result
@@ -47,7 +48,9 @@ def _clear_history() -> None:
     st.session_state["current_entry"] = None
 
 
-def render_sidebar() -> tuple[str, str]:
+def render_sidebar() -> tuple[str, str, bool, bool]:
+    use_cache = fallback = False
+    env_names = load_env_file()  # reads a local .env file if there is one; only names are ever shown
     with st.sidebar:
         st.header("Settings")
         mode_label = st.radio("Data source", [MODE_MOCK, MODE_BACKEND], key="mode")
@@ -59,13 +62,30 @@ def render_sidebar() -> tuple[str, str]:
             scenario = MOCK_SCENARIOS[scenario_label]
         else:
             st.caption("Uses the simplification backend if it has been connected.")
+            use_cache = st.toggle(
+                "Reuse saved results",
+                value=True,
+                key="use_cache",
+                help="The same text and level reuses an earlier verified result, so no new API requests are made.",
+            )
+            fallback = st.toggle(
+                "Show demo data if the quota runs out",
+                value=True,
+                key="use_fallback",
+                help="Only when Gemini's quota stops a run before any text exists. Always clearly labelled as demo data.",
+            )
+            st.caption(f"Saved results this session: {len(st.session_state['result_cache'])}")
+            if env_names:
+                st.caption("Settings found in .env: " + ", ".join(env_names))
+            else:
+                st.caption("No settings found in a .env file. Set them in the terminal or create .env from .env.example.")
         st.divider()
         st.markdown(
             "**About**\n\n"
             "This tool rewrites educational text at three difficulty levels and shows "
             "how the result was checked. Always read the output before using it."
         )
-    return mode, scenario
+    return mode, scenario, use_cache, fallback
 
 
 def render_input_panel() -> tuple[str, str | None, bool]:
@@ -109,10 +129,11 @@ def main() -> None:
     st.session_state.setdefault("input_text", "")
     st.session_state.setdefault("upload_error", None)
     st.session_state.setdefault("current_entry", None)
+    st.session_state.setdefault("result_cache", {})
     init_history(st.session_state)
 
     apply_theme()
-    mode, scenario = render_sidebar()
+    mode, scenario, use_cache, fallback = render_sidebar()
 
     hero(
         "Adaptive Educational Text Simplifier",
@@ -134,7 +155,14 @@ def main() -> None:
             else:
                 label = "demo (mock data)" if mode == SOURCE_MOCK else "backend"
                 with st.spinner(f"Simplifying at the {level} level using the {label}..."):
-                    result = simplify(text, level, mode=mode, scenario=scenario)
+                    result = simplify(
+                        text,
+                        level,
+                        mode=mode,
+                        scenario=scenario,
+                        cache=st.session_state["result_cache"] if use_cache else None,
+                        fallback_to_mock=fallback,
+                    )
                 st.session_state["current_entry"] = add_entry(st.session_state, result)
                 st.rerun()
         current = st.session_state["current_entry"]

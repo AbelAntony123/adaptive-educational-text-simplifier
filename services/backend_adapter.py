@@ -15,12 +15,13 @@ silently turned into zero.
 
 from __future__ import annotations
 
+import copy
 import importlib
 import math
 import os
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
-from typing import Any, Callable
+from typing import Any, Callable, MutableMapping
 
 from services import mock_data
 
@@ -38,6 +39,10 @@ MAX_INPUT_CHARS = 20_000  # UI-side safety limit, not a confirmed backend limit
 BACKEND_TIMEOUT_SECONDS = 180  # backend worst case is about 150 s (see docs/BACKEND_CONTRACT.md)
 BACKEND_MODULE_ENV = "SIMPLIFIER_BACKEND_MODULE"
 BACKEND_FUNCTION_NAME = "simplify_text"
+
+# Saved results are only reused while these settings stay the same.
+CACHE_ENV_NAMES = (BACKEND_MODULE_ENV, "GEMINI_MODEL", "GEMINI_EMBEDDING_MODEL", "SIMPLIFIER_MAX_ATTEMPTS")
+CACHE_LIMIT = 50
 
 METRIC_KEYS = (
     "readability_score",
@@ -75,6 +80,8 @@ def make_error_result(original_text: str, level: str, source: str, code: str, me
         "errors": [{"code": code, "message": message}],
         "source": source,
         "warnings": [],
+        "cached": False,
+        "fallback_notice": None,
     }
 
 
@@ -217,6 +224,8 @@ def normalize_response(raw: Any, original_text: str, level: str, source: str) ->
         "errors": errors,
         "source": source,
         "warnings": warnings,
+        "cached": False,
+        "fallback_notice": None,
     }
 
 
@@ -247,16 +256,71 @@ def _call_with_timeout(function: Callable[[str, str], Any], text: str, level: st
         executor.shutdown(wait=False)
 
 
+def _cache_key(text: str, level: str) -> tuple:
+    """Same text, level and backend settings give the same key, so a repeat click can reuse the result."""
+    return (text.strip(), level, tuple(os.environ.get(name, "") for name in CACHE_ENV_NAMES))
+
+
+def _is_cacheable(result: dict) -> bool:
+    """Only a clean, verified real result is saved. Errors, FAIL and NOT RUN results are always run again."""
+    return (
+        result["source"] == SOURCE_BACKEND
+        and not result["errors"]
+        and result["verification_status"] == "PASS"
+        and bool(result["simplified_text"].strip())
+    )
+
+
+def _quota_exhausted(result: dict) -> bool:
+    """True when the quota stopped the run before any simplified text existed."""
+    return any(error["code"] == "RATE_LIMIT" for error in result["errors"]) and not result["simplified_text"].strip()
+
+
 def simplify(
     text: str,
     level: str,
     mode: str = SOURCE_MOCK,
     scenario: str = "success",
     timeout: float = BACKEND_TIMEOUT_SECONDS,
+    cache: MutableMapping | None = None,
+    fallback_to_mock: bool = False,
 ) -> dict:
-    """Run one simplification. Never raises; problems are reported in ``errors``."""
-    source = SOURCE_BACKEND if mode == SOURCE_BACKEND else SOURCE_MOCK
+    """Run one simplification. Never raises; problems are reported in ``errors``.
 
+    ``cache`` is a dict kept by the caller (the UI keeps one per session). A verified real result for the
+    same text and level is reused instead of calling the backend again.
+    ``fallback_to_mock`` shows clearly labelled demo data when the quota stopped a real run before it
+    produced any text. Real text that already exists is never replaced.
+    """
+    source = SOURCE_BACKEND if mode == SOURCE_BACKEND else SOURCE_MOCK
+    key = _cache_key(text, level) if cache is not None and source == SOURCE_BACKEND and isinstance(text, str) else None
+
+    if key is not None and key in cache:
+        reused = copy.deepcopy(cache[key])
+        reused["cached"] = True
+        reused["warnings"] = list(reused["warnings"]) + [
+            "Reused a saved result from earlier in this session. No new Gemini requests were made."
+        ]
+        return reused
+
+    result = _run_once(text, level, source, scenario, timeout)
+
+    if key is not None and _is_cacheable(result):
+        cache[key] = copy.deepcopy(result)
+        while len(cache) > CACHE_LIMIT:
+            cache.pop(next(iter(cache)))  # drop the oldest saved result
+
+    if fallback_to_mock and source == SOURCE_BACKEND and _quota_exhausted(result):
+        reason = next(error["message"] for error in result["errors"] if error["code"] == "RATE_LIMIT")
+        demo = _run_once(text, level, SOURCE_MOCK, "success", timeout)
+        demo["fallback_notice"] = (
+            f"Gemini's quota ran out. {reason} These are demo results, not real model output."
+        )
+        return demo
+    return result
+
+
+def _run_once(text: str, level: str, source: str, scenario: str, timeout: float) -> dict:
     problems = validate_input(text, level)
     if problems:
         return make_error_result(text, level, source, "INVALID_INPUT", " ".join(problems))

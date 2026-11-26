@@ -88,6 +88,12 @@ def verify(original: str, simplified: str, verifier=verify_text, level: str | No
     )
     if level is not None:
         details.append(simplification_check(original, simplified, level))
+    if any(item["status"] == "FAIL" for item in details):
+        # The result will be rejected anyway, so do not spend two Gemini requests reviewing it.
+        skipped = "Skipped to save quota: a local check already failed, so this result is not accepted."
+        details.append({"check": "Model factuality review", "status": "NOT RUN", "explanation": skipped})
+        details.append({"check": "Meaning preservation review", "status": "NOT RUN", "explanation": skipped})
+        return details
     try:
         result = verifier(original, simplified)
         unsupported = result.get("unsupported_claims", [])
