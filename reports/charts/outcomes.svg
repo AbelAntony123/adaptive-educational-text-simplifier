@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" role="img" aria-label="How each run ended, by level" font-family="Geist, Inter, Segoe UI, sans-serif">
+<rect width="640" height="300" rx="14" fill="#202734"/>
+<text x="24" y="34" fill="#E0F8C7" font-size="16" font-weight="600">How each run ended, by level</text>
+<text x="108" y="84" fill="#E0F8C7" font-size="13" text-anchor="end">Beginner</text>
+<rect x="120.0" y="60" width="420.0" height="36" fill="#B7D894" stroke="#202734"/>
+<text x="330.0" y="83" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">PASS 7</text>
+<rect x="540.0" y="60" width="60.0" height="36" fill="#FFB4AB" stroke="#202734"/>
+<text x="570.0" y="83" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">FAIL 1</text>
+<text x="108" y="146" fill="#E0F8C7" font-size="13" text-anchor="end">Intermediate</text>
+<rect x="120.0" y="122" width="300.0" height="36" fill="#B7D894" stroke="#202734"/>
+<text x="270.0" y="145" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">PASS 5</text>
+<rect x="420.0" y="122" width="60.0" height="36" fill="#FFB4AB" stroke="#202734"/>
+<text x="450.0" y="145" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">FAIL 1</text>
+<rect x="480.0" y="122" width="60.0" height="36" fill="#F5D78A" stroke="#202734"/>
+<text x="510.0" y="145" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">NOT RUN 1</text>
+<rect x="540.0" y="122" width="60.0" height="36" fill="#36415A" stroke="#202734"/>
+<text x="570.0" y="145" fill="#E0F8C7" font-size="13" font-weight="600" text-anchor="middle">No text 1</text>
+<text x="108" y="208" fill="#E0F8C7" font-size="13" text-anchor="end">Advanced</text>
+<rect x="120.0" y="184" width="420.0" height="36" fill="#B7D894" stroke="#202734"/>
+<text x="330.0" y="207" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">PASS 7</text>
+<rect x="540.0" y="184" width="60.0" height="36" fill="#F5D78A" stroke="#202734"/>
+<text x="570.0" y="207" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">NOT RUN 1</text>
+</svg>

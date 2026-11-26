@@ -1,0 +1,164 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adaptive Educational Text Simplifier: project report</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@500&display=swap">
+<style>
+:root { --ink:#1A2433; --muted:#566074; --navy:#202734; --slate:#36415A; --green:#B7D894; --pale:#E0F8C7; --line:#D9E0EA; }
+* { box-sizing: border-box; }
+body { font-family: 'Geist', 'Segoe UI', system-ui, sans-serif; color: var(--ink); margin: 0; background: #F6F8FB; line-height: 1.6; }
+main { max-width: 980px; margin: 0 auto; padding: 40px 28px 80px; }
+header.cover { background: var(--navy); color: var(--pale); border-radius: 18px; padding: 36px 40px; margin-bottom: 32px; }
+.eyebrow { font-family: 'Geist Mono', Consolas, monospace; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--green); }
+h1 { font-size: 34px; line-height: 1.1; letter-spacing: -0.03em; margin: 10px 0 12px; color: var(--pale); }
+header.cover p { margin: 0; color: #C8D6BC; max-width: 640px; }
+h2 { font-size: 24px; letter-spacing: -0.02em; margin: 44px 0 10px; padding-top: 6px; border-top: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 26px 0 6px; }
+p, li { max-width: 760px; }
+.note { background: #FFF8DC; border: 1px solid #E7D58A; border-radius: 10px; padding: 12px 16px; margin: 16px 0; max-width: 760px; }
+table.data { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 14px 0; }
+table.data th, table.data td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+table.data thead th { background: var(--navy); color: var(--pale); font-weight: 600; }
+table.small { font-size: 12px; }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-weight: 600; font-size: 11px; border: 1px solid; }
+.pill.ok { background: #E6F4EA; color: #14532D; border-color: #14532D; }
+.pill.bad { background: #FDECEA; color: #7A1410; border-color: #7A1410; }
+.pill.warn { background: #FFF4D6; color: #6B4500; border-color: #6B4500; }
+figure { margin: 22px 0; break-inside: avoid; }
+figure img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; background: var(--navy); }
+figure.narrow img { max-width: 360px; }
+figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.chart svg { width: 100%; height: auto; display: block; border-radius: 14px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.quote { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 14px; }
+.quote b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 4px; }
+code { background: #EAEFF5; padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+pre { background: var(--navy); color: var(--pale); padding: 14px 16px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
+details { margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+@media print { body { background: #fff; } main { padding: 0; } h2 { break-after: avoid; } table, .quote, .chart { break-inside: avoid; } header.cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+@media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+</style></head><body><main>
+<header class="cover"><div class="eyebrow">Project report · 2026-11-26</div>
+<h1>Adaptive Educational Text Simplification using LLMs</h1>
+<p>Streamlit interface, Gemini pipeline, verification checks and a first real experiment: what was built, what was measured, and what is still open.</p></header>
+
+<h2>1. Summary</h2>
+<p>The project rewrites educational text at three levels (Beginner, Intermediate, Advanced) and checks every result before showing a verdict.
+A Streamlit interface lets a user paste or upload text, compare the original with the rewrite, and see which checks ran, what the metrics are and whether anything failed.
+A Gemini-based pipeline does the rewriting and the review. A first experiment ran <b>24 real simplifications</b> (8 passages × 3 levels) with
+<code>gemini-3.5-flash-lite</code>.</p>
+<div class="note"><b>How to read this report.</b> Screenshots 1 to 11 and the phone view use <b>demo (mock) data</b>: invented example text and numbers that only show how the interface behaves.
+They are not results. The results in section 4 come from real Gemini runs saved in <code>results/experiment_gemini-3.5-flash-lite.jsonl</code>.</div>
+
+<h2>2. What was built</h2>
+<ul>
+<li><b>Interface</b> (<code>app.py</code>, <code>ui/</code>): input and file upload, level selector, side-by-side texts with a word-level diff, verification table, metrics, session history, TXT and JSON export. Missing values show as N/A, and a result is never shown as verified unless checks actually ran.</li>
+<li><b>Backend adapter</b> (<code>services/backend_adapter.py</code>): the only file that talks to the pipeline. It validates every response, caps retries, reuses verified results and can show clearly labelled demo data when the quota runs out.</li>
+<li><b>Pipeline</b> (<code>pipeline/</code>): level-specific prompts, local preservation checks, a Gemini factuality and meaning review, retries with feedback, Flesch readability and embedding similarity.</li>
+<li><b>Quota handling:</b> 429 errors are read for the wait time and retried once only when short; all retries share one budget of three requests per run; Gemini reviews are skipped when a local check already failed. A run uses 4 requests at best and 8 at worst.</li>
+<li><b>Tests:</b> automated tests cover the adapter, parser, exports, history, backend, caching, fallback, runner and the app itself.</li>
+</ul>
+
+<h2>3. How a result is checked</h2>
+<table class="data"><thead><tr><th>Check</th><th>Type</th><th>What it does</th></tr></thead><tbody>
+<tr><td>Numbers, names, and technical terms</td><td>Local</td><td>Numbers, capitalised names and hyphenated terms from the source must appear in the output.</td></tr>
+<tr><td>Output length sanity</td><td>Local</td><td>The output must not be empty or absurdly long.</td></tr>
+<tr><td>Simplification effect</td><td>Local</td><td>Beginner and Intermediate outputs must be measurably easier to read (readability or sentence length). Advanced has no target.</td></tr>
+<tr><td>Model factuality review</td><td>Gemini</td><td>A second request asks whether any claim in the output is unsupported by the source.</td></tr>
+<tr><td>Meaning preservation review</td><td>Gemini</td><td>The same review asks whether important meaning or qualifications were lost.</td></tr>
+</tbody></table>
+<p>PASS means every check passed. It says the text is faithful to the source and measurably easier to read. It does <b>not</b> prove that a learner understands it.</p>
+
+<h2>4. Experiment and results</h2>
+<h3>Method</h3>
+<ul>
+<li><b>Data:</b> 8 short, non-sensitive passages written for the project (Biology, Chemistry, Civics, Economics, Geography, Health, History, Physics), each simplified at all three levels = 24 runs.</li>
+<li><b>Model:</b> <code>gemini-3.5-flash-lite</code> (embeddings: <code>gemini-embedding-2-preview</code>); prompt version <code>2026-10-23.3</code>.</li>
+<li><b>Settings:</b> one run per passage and level, no saved-result reuse and no demo fallback, so every number is real. Up to 3 generation attempts per run; 20 seconds between runs.</li>
+<li><b>Cost:</b> 89 API requests and 192 seconds of run time in total. The runner is resumable and stops early if Gemini keeps failing.</li>
+<li><b>Reproduce:</b> <code>experiments\run_experiments.py</code>, then <code>experiments\summarize.py</code>, then <code>reports\build_report.py</code>.</li>
+</ul>
+<h3>Results by level</h3>
+<table class='data'><thead><tr><th>Level</th><th>Runs</th><th>PASS</th><th>FAIL</th><th>NOT RUN</th><th>No text</th><th>Readability, source to output</th><th>Mean change</th><th>Easier in</th><th>Similarity</th><th>Words out/in</th><th>Attempts</th><th>API requests</th></tr></thead><tbody><tr><th>Beginner</th><td>8</td><td>7</td><td>1</td><td>0</td><td>0</td><td>49.1 to 64.3</td><td>15.2</td><td>8 of 8</td><td>0.98</td><td>1.05x</td><td>1.4</td><td>36</td></tr><tr><th>Intermediate</th><td>8</td><td>5</td><td>1</td><td>1</td><td>1</td><td>46.1 to 53.1</td><td>7.0</td><td>6 of 7</td><td>0.98</td><td>0.99x</td><td>1.9</td><td>28</td></tr><tr><th>Advanced</th><td>8</td><td>7</td><td>0</td><td>1</td><td>0</td><td>49.1 to 0.7</td><td>-48.4</td><td>0 of 8</td><td>0.96</td><td>0.88x</td><td>1.1</td><td>25</td></tr></tbody></table>
+<p style="font-size:13px;color:var(--muted)">Readability is Flesch Reading Ease (higher is easier). Similarity is (cosine + 1) / 2 on embeddings. "No text" means the run produced no usable output. Means use only runs that produced text.</p>
+<div class="chart"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" role="img" aria-label="Readability by level (Flesch Reading Ease, higher = easier)" font-family="Geist, Inter, Segoe UI, sans-serif">
+<rect width="640" height="340" rx="14" fill="#202734"/>
+<text x="24" y="34" fill="#E0F8C7" font-size="16" font-weight="600">Readability by level (Flesch Reading Ease, higher = easier)</text>
+<line x1="56" y1="280.0" x2="616" y2="280.0" stroke="#36415A"/>
+<text x="48" y="284.0" fill="#A9B8A0" font-size="11" text-anchor="end">0</text>
+<line x1="56" y1="226.0" x2="616" y2="226.0" stroke="#36415A"/>
+<text x="48" y="230.0" fill="#A9B8A0" font-size="11" text-anchor="end">25</text>
+<line x1="56" y1="172.0" x2="616" y2="172.0" stroke="#36415A"/>
+<text x="48" y="176.0" fill="#A9B8A0" font-size="11" text-anchor="end">50</text>
+<line x1="56" y1="118.0" x2="616" y2="118.0" stroke="#36415A"/>
+<text x="48" y="122.0" fill="#A9B8A0" font-size="11" text-anchor="end">75</text>
+<line x1="56" y1="64.0" x2="616" y2="64.0" stroke="#36415A"/>
+<text x="48" y="68.0" fill="#A9B8A0" font-size="11" text-anchor="end">100</text>
+<rect x="89.6" y="173.9" width="56.0" height="106.1" rx="4" fill="#36415A" stroke="#B7D894" stroke-width="1"/>
+<text x="117.6" y="167.9" fill="#E0F8C7" font-size="12" text-anchor="middle">49.1</text>
+<rect x="151.6" y="141.0" width="56.0" height="139.0" rx="4" fill="#B7D894" stroke="#B7D894" stroke-width="1"/>
+<text x="179.6" y="135.0" fill="#E0F8C7" font-size="12" text-anchor="middle">64.3</text>
+<text x="149.3" y="302" fill="#E0F8C7" font-size="13" text-anchor="middle">Beginner</text>
+<rect x="276.3" y="180.4" width="56.0" height="99.6" rx="4" fill="#36415A" stroke="#B7D894" stroke-width="1"/>
+<text x="304.3" y="174.4" fill="#E0F8C7" font-size="12" text-anchor="middle">46.1</text>
+<rect x="338.3" y="165.4" width="56.0" height="114.6" rx="4" fill="#B7D894" stroke="#B7D894" stroke-width="1"/>
+<text x="366.3" y="159.4" fill="#E0F8C7" font-size="12" text-anchor="middle">53.1</text>
+<text x="336.0" y="302" fill="#E0F8C7" font-size="13" text-anchor="middle">Intermediate</text>
+<rect x="462.9" y="173.9" width="56.0" height="106.1" rx="4" fill="#36415A" stroke="#B7D894" stroke-width="1"/>
+<text x="490.9" y="167.9" fill="#E0F8C7" font-size="12" text-anchor="middle">49.1</text>
+<rect x="524.9" y="278.5" width="56.0" height="1.5" rx="4" fill="#B7D894" stroke="#B7D894" stroke-width="1"/>
+<text x="552.9" y="272.5" fill="#E0F8C7" font-size="12" text-anchor="middle">0.7</text>
+<text x="522.7" y="302" fill="#E0F8C7" font-size="13" text-anchor="middle">Advanced</text>
+<rect x="56" y="318" width="12" height="12" rx="3" fill="#36415A" stroke="#B7D894"/>
+<text x="74" y="328" fill="#A9B8A0" font-size="12">Original text</text>
+<rect x="176" y="318" width="12" height="12" rx="3" fill="#B7D894"/>
+<text x="194" y="328" fill="#A9B8A0" font-size="12">Simplified output</text>
+</svg></div>
+<div class="chart" style="margin-top:16px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" role="img" aria-label="How each run ended, by level" font-family="Geist, Inter, Segoe UI, sans-serif">
+<rect width="640" height="300" rx="14" fill="#202734"/>
+<text x="24" y="34" fill="#E0F8C7" font-size="16" font-weight="600">How each run ended, by level</text>
+<text x="108" y="84" fill="#E0F8C7" font-size="13" text-anchor="end">Beginner</text>
+<rect x="120.0" y="60" width="420.0" height="36" fill="#B7D894" stroke="#202734"/>
+<text x="330.0" y="83" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">PASS 7</text>
+<rect x="540.0" y="60" width="60.0" height="36" fill="#FFB4AB" stroke="#202734"/>
+<text x="570.0" y="83" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">FAIL 1</text>
+<text x="108" y="146" fill="#E0F8C7" font-size="13" text-anchor="end">Intermediate</text>
+<rect x="120.0" y="122" width="300.0" height="36" fill="#B7D894" stroke="#202734"/>
+<text x="270.0" y="145" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">PASS 5</text>
+<rect x="420.0" y="122" width="60.0" height="36" fill="#FFB4AB" stroke="#202734"/>
+<text x="450.0" y="145" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">FAIL 1</text>
+<rect x="480.0" y="122" width="60.0" height="36" fill="#F5D78A" stroke="#202734"/>
+<text x="510.0" y="145" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">NOT RUN 1</text>
+<rect x="540.0" y="122" width="60.0" height="36" fill="#36415A" stroke="#202734"/>
+<text x="570.0" y="145" fill="#E0F8C7" font-size="13" font-weight="600" text-anchor="middle">No text 1</text>
+<text x="108" y="208" fill="#E0F8C7" font-size="13" text-anchor="end">Advanced</text>
+<rect x="120.0" y="184" width="420.0" height="36" fill="#B7D894" stroke="#202734"/>
+<text x="330.0" y="207" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">PASS 7</text>
+<rect x="540.0" y="184" width="60.0" height="36" fill="#F5D78A" stroke="#202734"/>
+<text x="570.0" y="207" fill="#202734" font-size="13" font-weight="600" text-anchor="middle">NOT RUN 1</text>
+</svg></div>
+
+<h3>Findings</h3>
+<ul><li><b>23 of 24 runs produced text</b>; 19 passed every check, 2 failed a check and 2 could not complete verification (a Gemini server error interrupted the run). 1 run produced no usable text at all.</li><li><b>Beginner made text easier to read:</b> mean Flesch Reading Ease rose from 49.1 to 64.3 (+15.2), easier in 8 of 8 runs. <b>Intermediate</b> improved less (+7.0, easier in 6 of 7).</li><li><b>Advanced did not simplify by this measure:</b> mean readability fell from 49.1 to 0.7. This follows from its prompt (concise, precise academic wording with the technical terms kept) and the fact that the Advanced level has no simplification target. It is a design question for the project, not a measurement error: the example below shows the actual text.</li><li><b>Embedding similarity stayed high in every run that produced text:</b> the means were 0.98 (Beginner), 0.98 (Intermediate) and 0.96 (Advanced). Because the score is (cosine + 1) / 2, values near 1 are expected, and similarity does not prove that the meaning or the facts were kept.</li><li><b>Intermediate often returned text that was unchanged or empty:</b> All 5 MODEL_OUTPUT_INVALID errors (the model returned empty or unchanged text) occurred at the Intermediate level. In one run all three attempts did, so no text was produced.</li><li><b>Both FAIL results are probably false alarms:</b> the local check for numbers and terms failed because the model wrote numbers as words ("seven to nine" instead of "7 and 9", "two percent" instead of "2 percent"). The meaning was kept. The checker should treat number words as equal to digits; it was not changed during the experiment so the results stay valid.</li></ul>
+
+<h3>Example: the same passage at two levels</h3>
+<div class='cols'><div class='quote'><b>Source (readability 59.9)</b>The Nile flows north through northeastern Africa and empties into the Mediterranean Sea. For thousands of years, farmers in Egypt depended on its yearly floods, which left behind fertile silt that made the land good for growing crops. The Aswan High Dam, built between 1960 and 1970, now controls the flooding and provides electricity, but it also traps much of the silt behind the dam.</div><div><div class='quote'><b>Beginner output · readability 76.0 (source 59.9) · PASS</b>The Nile flows north through northeastern Africa. It empties into the Mediterranean Sea. For thousands of years, farmers in Egypt depended on its yearly floods. The floods left behind fertile silt. This made the land good for growing crops. The Aswan High Dam was built between 1960 and 1970. It now controls the flooding. It also provides electricity. But it traps much of the silt behind the dam.</div><br><div class='quote'><b>Advanced output · readability 1.2 (source 59.9) · PASS</b>Flowing northward through northeastern Africa into the Mediterranean Sea, the Nile sustained Egyptian agriculture for millennia via annual floods that deposited fertile silt. Although the Aswan High Dam, constructed between 1960 and 1970, currently regulates inundation and generates hydroelectricity, it simultaneously impedes the downstream transport of silt.</div></div></div>
+
+<details><summary>All 24 runs</summary><table class='data small'><thead><tr><th>Passage</th><th>Level</th><th>Status</th><th>Readability in</th><th>out</th><th>Similarity</th><th>Words</th><th>Attempts</th><th>Errors</th></tr></thead><tbody><tr><td>biology_photosynthesis</td><td>Beginner</td><td><span class='pill ok'>PASS</span></td><td>20.3</td><td>42.8</td><td>0.98</td><td>48 to 51</td><td>2</td><td>-</td></tr><tr><td>biology_photosynthesis</td><td>Intermediate</td><td><span class='pill ok'>PASS</span></td><td>20.3</td><td>41.8</td><td>0.97</td><td>48 to 49</td><td>1</td><td>-</td></tr><tr><td>biology_photosynthesis</td><td>Advanced</td><td><span class='pill ok'>PASS</span></td><td>20.3</td><td>8.0</td><td>0.98</td><td>48 to 48</td><td>1</td><td>-</td></tr><tr><td>chemistry_atoms</td><td>Beginner</td><td><span class='pill ok'>PASS</span></td><td>44.4</td><td>56.6</td><td>0.97</td><td>61 to 67</td><td>1</td><td>-</td></tr><tr><td>chemistry_atoms</td><td>Intermediate</td><td><span class='pill ok'>PASS</span></td><td>44.4</td><td>48.5</td><td>0.98</td><td>61 to 59</td><td>2</td><td>-</td></tr><tr><td>chemistry_atoms</td><td>Advanced</td><td><span class='pill ok'>PASS</span></td><td>44.4</td><td>14.4</td><td>0.96</td><td>61 to 55</td><td>1</td><td>-</td></tr><tr><td>civics_democracy</td><td>Beginner</td><td><span class='pill ok'>PASS</span></td><td>48.6</td><td>56.3</td><td>0.98</td><td>58 to 59</td><td>1</td><td>-</td></tr><tr><td>civics_democracy</td><td>Intermediate</td><td><span class='pill ok'>PASS</span></td><td>48.6</td><td>47.4</td><td>0.99</td><td>58 to 54</td><td>1</td><td>-</td></tr><tr><td>civics_democracy</td><td>Advanced</td><td><span class='pill ok'>PASS</span></td><td>48.6</td><td>-23.3</td><td>0.94</td><td>58 to 47</td><td>1</td><td>-</td></tr><tr><td>economics_inflation</td><td>Beginner</td><td><span class='pill ok'>PASS</span></td><td>55.0</td><td>76.8</td><td>0.98</td><td>59 to 60</td><td>1</td><td>-</td></tr><tr><td>economics_inflation</td><td>Intermediate</td><td><span class='pill bad'>FAIL</span></td><td>55.0</td><td>58.8</td><td>0.98</td><td>59 to 57</td><td>3</td><td>MODEL_OUTPUT_INVALID,VERIFICATION_FAILED</td></tr><tr><td>economics_inflation</td><td>Advanced</td><td><span class='pill ok'>PASS</span></td><td>55.0</td><td>-4.2</td><td>0.95</td><td>59 to 53</td><td>1</td><td>-</td></tr><tr><td>geography_nile</td><td>Beginner</td><td><span class='pill ok'>PASS</span></td><td>59.9</td><td>76.0</td><td>0.99</td><td>65 to 68</td><td>1</td><td>-</td></tr><tr><td>geography_nile</td><td>Intermediate</td><td><span class='pill warn'>NOT RUN</span></td><td>59.9</td><td>66.5</td><td>1.00</td><td>65 to 66</td><td>2</td><td>MODEL_OUTPUT_INVALID,API_ERROR</td></tr><tr><td>geography_nile</td><td>Advanced</td><td><span class='pill ok'>PASS</span></td><td>59.9</td><td>1.2</td><td>0.97</td><td>65 to 47</td><td>1</td><td>-</td></tr><tr><td>health_sleep</td><td>Beginner</td><td><span class='pill bad'>FAIL</span></td><td>42.9</td><td>72.0</td><td>0.96</td><td>54 to 60</td><td>3</td><td>VERIFICATION_FAILED</td></tr><tr><td>health_sleep</td><td>Intermediate</td><td><span class='pill ok'>PASS</span></td><td>42.9</td><td>52.9</td><td>0.97</td><td>54 to 55</td><td>1</td><td>-</td></tr><tr><td>health_sleep</td><td>Advanced</td><td><span class='pill warn'>NOT RUN</span></td><td>42.9</td><td>-3.9</td><td>0.96</td><td>54 to 44</td><td>2</td><td>API_ERROR</td></tr><tr><td>history_rome</td><td>Beginner</td><td><span class='pill ok'>PASS</span></td><td>51.7</td><td>54.0</td><td>0.99</td><td>75 to 80</td><td>1</td><td>-</td></tr><tr><td>history_rome</td><td>Intermediate</td><td><span class='pill ok'>PASS</span></td><td>51.7</td><td>55.6</td><td>0.99</td><td>75 to 76</td><td>2</td><td>-</td></tr><tr><td>history_rome</td><td>Advanced</td><td><span class='pill ok'>PASS</span></td><td>51.7</td><td>-3.8</td><td>0.96</td><td>75 to 83</td><td>1</td><td>-</td></tr><tr><td>physics_boiling</td><td>Beginner</td><td><span class='pill ok'>PASS</span></td><td>70.3</td><td>80.3</td><td>0.99</td><td>81 to 83</td><td>1</td><td>-</td></tr><tr><td>physics_boiling</td><td>Intermediate</td><td><span class='pill warn'>NOT RUN</span></td><td>70.3</td><td>N/A</td><td>N/A</td><td>N/A to N/A</td><td>3</td><td>MODEL_OUTPUT_INVALID,MODEL_OUTPUT_INVALID,MODEL_OUTPUT_INVALID</td></tr><tr><td>physics_boiling</td><td>Advanced</td><td><span class='pill ok'>PASS</span></td><td>70.3</td><td>17.3</td><td>0.97</td><td>81 to 64</td><td>1</td><td>-</td></tr></tbody></table></details>
+
+<h2>5. Limitations</h2>
+<ul><li>One model (gemini-3.5-flash-lite), one run per passage and level, 8 short passages: too small to draw statistical conclusions.</li><li>The default model gemini-3.8-flash and gemini-3.5-flash were overloaded (HTTP 503/504) on the day of testing, which is why the lite model was used.</li><li>Flesch Reading Ease and embedding similarity are automatic proxies. They do not prove that a learner understood the text. No human evaluation has been done yet.</li><li>Gemini reviews its own output with the same model family, so its verdicts may share the model&#x27;s blind spots.</li><li>The passages were written for this project and are short general-knowledge texts; results on textbook or specialist material may differ.</li><li>Free-tier Gemini content may be used by Google to improve its products, so only non-sensitive text was sent.</li></ul>
+
+<h2>6. Next steps</h2>
+<ol><li>Make the numbers check treat number words and digits as equal, then re-run the affected cases.</li><li>Decide with the team what Advanced should mean, and whether it needs a different target than readability.</li><li>Investigate why Intermediate returns unchanged text, for example by strengthening its prompt or retrying with feedback.</li><li>Add a larger dataset, repeat each run several times, and compare against a plain one-shot prompt as a baseline.</li><li>Add human evaluation (simplicity, meaning preservation, fluency) and report agreement between raters.</li><li>Compare more than one model, including a locally run open model.</li></ol>
+
+<h2>7. Interface screenshots</h2>
+<figure class=''><img src='screenshots/01_home.png' alt='Home screen and input'><figcaption><b>Home screen and input.</b> Demo mode. The example in the header is a hand-written illustration, not model output.</figcaption></figure><figure class=''><img src='screenshots/02_result_texts.png' alt='Result: original and simplified text'><figcaption><b>Result: original and simplified text.</b> Demo (mock) data, labelled MOCK DATA. The numbers and texts are invented examples.</figcaption></figure><figure class=''><img src='screenshots/03_verification_and_types.png' alt='Verification table with check types'><figcaption><b>Verification table with check types.</b> Demo data. The Type column says where each check runs; in demo mode every check is &#x27;Simulated&#x27;.</figcaption></figure><figure class=''><img src='screenshots/04_metrics.png' alt='Metrics'><figcaption><b>Metrics.</b> Demo data. Readability, similarity, word counts and attempts.</figcaption></figure><figure class=''><img src='screenshots/05_word_by_word_changes.png' alt='Word-by-word comparison'><figcaption><b>Word-by-word comparison.</b> Struck-through words were removed, underlined words were added.</figcaption></figure><figure class=''><img src='screenshots/06_verification_fails.png' alt='A failed verification'><figcaption><b>A failed verification.</b> Demo scenario. The overall status is FAIL and the failing check is shown.</figcaption></figure><figure class=''><img src='screenshots/08_not_run_verification_card.png' alt='Verification not run'><figcaption><b>Verification not run.</b> Demo scenario. The app says nothing was verified and never shows PASS.</figcaption></figure><figure class=''><img src='screenshots/09_missing_metrics_na.png' alt='Missing metrics show as N/A'><figcaption><b>Missing metrics show as N/A.</b> Demo scenario. A missing value is never shown as zero.</figcaption></figure><figure class=''><img src='screenshots/10_quota_error.png' alt='Quota error handled clearly'><figcaption><b>Quota error handled clearly.</b> Demo scenario. The error, advice on what to do, no simplified text, and NOT RUN.</figcaption></figure><figure class=''><img src='screenshots/11_history.png' alt='Session history and readability chart'><figcaption><b>Session history and readability chart.</b> Demo runs; the chart labels each run as mock.</figcaption></figure><figure class=''><img src='screenshots/12_real_mode_sidebar.png' alt='Real-backend settings'><figcaption><b>Real-backend settings.</b> The reuse and demo-fallback switches and the .env status (setting names only).</figcaption></figure><figure class=''><img src='screenshots/14_real_result_badges_and_texts.png' alt='A real Gemini result (Intermediate)'><figcaption><b>A real Gemini result (Intermediate).</b> Real backend, gemini-3.5-flash-lite, sample text.</figcaption></figure><figure class=''><img src='screenshots/15_real_verification_types.png' alt='Real verification with check types'><figcaption><b>Real verification with check types.</b> Three local checks (no API request) and two Gemini reviews.</figcaption></figure><figure class=''><img src='screenshots/16_real_metrics.png' alt='Real metrics'><figcaption><b>Real metrics.</b> Computed from the real result.</figcaption></figure><figure class=''><img src='screenshots/17_real_reused_result.png' alt='Repeat click reuses the saved result'><figcaption><b>Repeat click reuses the saved result.</b> Second click with the same text and level: REUSED RESULT, no new API requests.</figcaption></figure><figure class='narrow'><img src='screenshots/13_phone_view.png' alt='Phone-sized view'><figcaption><b>Phone-sized view.</b> Demo mode at 390 px width.</figcaption></figure>
+
+<h2>8. Run it yourself</h2>
+<pre>python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -r pipeline\requirements.txt
+.venv\Scripts\python -m streamlit run app.py      (demo works with no key)
+.venv\Scripts\python -m pytest</pre>
+<p>For the real backend, copy <code>.env.example</code> to <code>.env</code> and fill in the key yourself. The file is ignored by Git and is never shown or saved by the app.</p>
+</main></body></html>

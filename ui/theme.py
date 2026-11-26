@@ -58,8 +58,9 @@ h2, h3, h4 { color: var(--text); letter-spacing: -0.015em; }
 .specimen .note { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin: 0; }
 
 /* ---------- cards ---------- */
-div[data-testid="stVerticalBlockBorderWrapper"] { border: 1px solid var(--line) !important; border-radius: 16px;
-        background: var(--card); box-shadow: var(--shadow); }
+/* Cards are containers created with key="card-...", which Streamlit exposes as the class st-key-card-... */
+[class*="st-key-card-"] { border: 1px solid var(--line) !important; border-radius: 16px !important;
+        background: var(--card) !important; box-shadow: var(--shadow); padding: 0.35rem 0.5rem; }
 .step { display: flex; align-items: center; gap: 0.7rem; margin: 0.15rem 0 0.75rem 0; font-weight: 600;
         font-size: 1.08rem; color: var(--text); letter-spacing: -0.01em; }
 .step-num { display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 8px;

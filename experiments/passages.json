@@ -1,0 +1,42 @@
+[
+  {
+    "id": "history_rome",
+    "subject": "History",
+    "text": "The Roman Empire grew by conquering nearby lands and then ruling them through governors and a large army. Roads built by Roman engineers connected distant provinces, which helped soldiers, traders, and officials travel quickly. Around 117 CE, the empire reached its greatest size under Emperor Trajan. Over the next centuries, civil wars, economic problems, and attacks from outside groups weakened Roman control. In 476 CE, the last emperor in the West was removed from power."
+  },
+  {
+    "id": "physics_boiling",
+    "subject": "Physics",
+    "text": "Water boils at 100 degrees Celsius at sea level, but it boils at a lower temperature at high altitude because the air pressure is lower. At the top of Mount Everest, which is about 8,849 metres high, water boils at roughly 70 degrees Celsius. This is why food takes longer to cook in the mountains. A pressure cooker raises the pressure inside the pot, which lets water get hotter than 100 degrees Celsius before it boils, so food cooks faster."
+  },
+  {
+    "id": "biology_photosynthesis",
+    "subject": "Biology",
+    "text": "Photosynthesis is the biochemical process by which autotrophic organisms, such as plants and algae, convert light energy into chemical energy. During the light-dependent reactions, chlorophyll absorbs photons, driving the synthesis of ATP and NADPH, which subsequently power the Calvin cycle, wherein carbon dioxide is fixed into glucose."
+  },
+  {
+    "id": "geography_nile",
+    "subject": "Geography",
+    "text": "The Nile flows north through northeastern Africa and empties into the Mediterranean Sea. For thousands of years, farmers in Egypt depended on its yearly floods, which left behind fertile silt that made the land good for growing crops. The Aswan High Dam, built between 1960 and 1970, now controls the flooding and provides electricity, but it also traps much of the silt behind the dam."
+  },
+  {
+    "id": "civics_democracy",
+    "subject": "Civics",
+    "text": "In a democracy, citizens choose their leaders through free and fair elections. Some systems are direct, meaning that people vote on laws themselves, while most countries use a representative system, in which elected officials make decisions on behalf of the public. Independent courts and a free press help keep those in power accountable to the people they serve."
+  },
+  {
+    "id": "chemistry_atoms",
+    "subject": "Chemistry",
+    "text": "An atom consists of a nucleus, which contains protons and neutrons, surrounded by electrons. The number of protons, known as the atomic number, determines which element the atom belongs to. For example, every carbon atom has 6 protons, while every oxygen atom has 8. Atoms of the same element can have different numbers of neutrons, and these variants are called isotopes."
+  },
+  {
+    "id": "health_sleep",
+    "subject": "Health",
+    "text": "Adults generally need between 7 and 9 hours of sleep each night. During sleep, the brain consolidates memories and the body repairs tissues. Chronic sleep deprivation has been linked to poorer concentration, a weakened immune response, and a higher risk of heart disease, which is why consistent sleep schedules are recommended by health organisations."
+  },
+  {
+    "id": "economics_inflation",
+    "subject": "Economics",
+    "text": "Inflation is the rate at which the general level of prices rises over time, reducing the purchasing power of money. Central banks often aim for an inflation rate of about 2 percent per year. When inflation is too high, they may raise interest rates to make borrowing more expensive, which slows spending and helps bring price increases under control."
+  }
+]

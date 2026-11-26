@@ -89,7 +89,7 @@ def render_sidebar() -> tuple[str, str, bool, bool]:
 
 
 def render_input_panel() -> tuple[str, str | None, bool]:
-    with st.container(border=True):
+    with st.container(border=True, key="card-input"):
         step_heading(1, "Your text")
         st.file_uploader(
             f"Upload a file (optional): {', '.join(SUPPORTED_EXTENSIONS)}",
@@ -110,7 +110,7 @@ def render_input_panel() -> tuple[str, str | None, bool]:
         info_col.caption(f"{len(text):,} / {MAX_INPUT_CHARS:,} characters")
         sample_col.button("Use sample text", on_click=_use_sample)
 
-    with st.container(border=True):
+    with st.container(border=True, key="card-level"):
         step_heading(2, "Difficulty level")
         level = st.segmented_control(
             "Difficulty level",

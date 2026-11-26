@@ -228,12 +228,12 @@ def render_result(entry: dict, view: str = "current") -> None:
         with st.expander(f"Notes about this response ({len(entry['warnings'])})"):
             for warning in entry["warnings"]:
                 st.markdown(f"- {warning}")
-    with st.container(border=True):
+    with st.container(border=True, key=f"card-texts-{view}"):
         render_comparison(entry)
         render_changes(entry)
-    with st.container(border=True):
+    with st.container(border=True, key=f"card-verification-{view}"):
         render_verification(entry)
-    with st.container(border=True):
+    with st.container(border=True, key=f"card-metrics-{view}"):
         render_metrics(entry)
     render_downloads(entry, view)
 
